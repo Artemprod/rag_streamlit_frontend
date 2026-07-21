@@ -6,3 +6,8 @@ services:
     ports:
       - "8501:8501"
     env_file: .env
+    networks: [rag]
+
+networks:
+  rag:
+    external: true
