@@ -1,11 +1,14 @@
 import streamlit as st
 
+import auth
 import process_client
 import storage
 from preview import doc_metadata, icon_for, preview_file
 from search import SearchNotReady, ask
 
 st.set_page_config(page_title="Спросить документ", page_icon="🧊", layout="wide")
+
+auth.require_login()
 
 st.session_state.setdefault("uploader_key", 0)
 st.session_state.setdefault("selected_file", None)
@@ -96,6 +99,8 @@ st.header("Спросить документ")
 with st.sidebar:
     render_uploader()
     render_upload_progress()
+    st.divider()
+    auth.render_logout()
 
 query = st.text_input("Спросить базу")
 if query and query != st.session_state.previous_query:

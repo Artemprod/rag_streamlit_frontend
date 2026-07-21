@@ -11,7 +11,10 @@ class Config(BaseSettings):
     s3_region: str | None = None
 
     process_url: str = "http://5.253.228.69:8000/api"
+    process_api_key: str
     request_timeout: int = 300
+
+    admin_password: str
 
 
 config = Config()
