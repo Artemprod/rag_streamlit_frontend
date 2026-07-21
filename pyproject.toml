@@ -1,0 +1,63 @@
+[project]
+name = "srtreamlit-frontend"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+dependencies = [
+    "loguru>=0.7.3",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
+    "python-dotenv>=1.2.2",
+    "tenacity>=9.1.4",
+    "streamlit>=1.58.0",
+    "pydantic-settings>=2.14.1",
+    "streamlit[pdf]>=1.58.0",
+    "streamlit-agraph>=0.0.45",
+    "streamlit-explorer>=0.1.0",
+    "streamlit-file-browser>=3.2.22",
+    "streamlit-pdf-viewer>=0.0.29",
+    "streamlit-pydantic>=0.6.0",
+    "typing-extensions>=4.15.0",
+    "yfiles-graphs-for-streamlit>=1.3.0",
+    "streamlit-aggrid>=1.2.1.post2",
+    "ruff>=0.15.20",
+    "streamlit-desktop-app>=0.3.4",
+    "pypdf>=6.14.2",
+    "mammoth>=1.12.0",
+    "s3fs>=2026.6.0",
+    "httpx>=0.28.1",
+]
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+# ==================== LINTER ====================
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "C4", "UP", "B", "SIM", "PL", "RUF",
+]
+
+fixable = ["ALL"]
+
+ignore = [
+    "E501",     # line too long
+    "E402",     # imports not at top (sys.path)
+    "TC001",    # type-checking imports
+    "TC002",
+    "TC003",
+    "RUF012",   # mutable defaults
+    "PLW1508",  # env var default
+    "RET504",   # unnecessary assignment before return
+    "SIM108",   # prefer ternary
+
+    # Русский язык
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+# ==================== FORMATTER ====================
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
