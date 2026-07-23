@@ -16,7 +16,9 @@ st.set_page_config(
 
 import auth
 from state import init_state
-from ui import chat, upload
+from ui import chat, theme, upload
+
+theme.inject_base_styles()
 
 authenticator = auth.require_login()
 init_state()

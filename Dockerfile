@@ -10,6 +10,7 @@ ENV UV_PROJECT_ENVIRONMENT=/usr/local PYTHONUNBUFFERED=1
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
+COPY .streamlit ./.streamlit
 COPY src ./src
 
 ENTRYPOINT ["streamlit", "run", "src/app.py", \
