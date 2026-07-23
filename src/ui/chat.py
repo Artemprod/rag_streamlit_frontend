@@ -36,6 +36,14 @@ def _handle_prompt(prompt: str) -> None:
         st.session_state.messages.append(
             {"role": "assistant", "content": f"⚠️ {error}", "sources": []}
         )
+    except Exception as error:  # неожиданное не должно ронять всю страницу
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": f"⚠️ Непредвиденная ошибка: {error}",
+                "sources": [],
+            }
+        )
 
 
 def _render_history() -> None:
@@ -69,7 +77,15 @@ def _render_preview() -> None:
 
 
 def render() -> None:
-    st.title("💬 Спросить документы")
+    title_col, clear_col = st.columns([0.8, 0.2], vertical_alignment="center")
+    title_col.title("💬 Спросить документы")
+    if st.session_state.messages and clear_col.button(
+        "🧹 Очистить", width="stretch", help="Очистить историю диалога"
+    ):
+        st.session_state.messages = []
+        st.session_state.selected_file = None
+        st.session_state.selected_sources = []
+        st.rerun()
 
     if not retrieval_client.is_configured():
         st.warning(
