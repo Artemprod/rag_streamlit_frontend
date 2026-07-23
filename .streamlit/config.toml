@@ -1,0 +1,35 @@
+# Нативная тема Streamlit 1.60 — современный вид без сторонних UI-библиотек.
+# Светлая и тёмная вариации; акцент — индиго/фиолетовый.
+
+[theme]
+base = "light"
+primaryColor = "#5b5bd6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f6fb"
+textColor = "#1f2430"
+linkColor = "#5145cd"
+borderColor = "#e7e8f0"
+baseRadius = "0.7rem"
+buttonRadius = "0.6rem"
+showWidgetBorder = true
+showSidebarBorder = true
+font = "sans-serif"
+headingFont = "sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#f7f8fd"
+secondaryBackgroundColor = "#eef0f9"
+borderColor = "#e4e6f1"
+
+[theme.dark]
+primaryColor = "#8b8bf5"
+backgroundColor = "#14151b"
+secondaryBackgroundColor = "#1c1e27"
+textColor = "#e7e9f0"
+linkColor = "#a5b4fc"
+borderColor = "#2a2d3a"
+
+[theme.dark.sidebar]
+backgroundColor = "#17181f"
+secondaryBackgroundColor = "#20222c"
+borderColor = "#2a2d3a"

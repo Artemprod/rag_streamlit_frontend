@@ -4,11 +4,13 @@ from io import BytesIO
 from pypdf import PdfReader
 from streamlit_pdf_viewer import pdf_viewer
 
+from .metadata import doc_metadata
 
-def _annotations(documents: list, s3_key: str, data: bytes, color: str = "red") -> list[dict]:
+
+def _annotations(
+    documents: list, s3_key: str, data: bytes, color: str = "red"
+) -> list[dict]:
     """Рамки вокруг найденных чанков по bbox от docling."""
-    from . import doc_metadata
-
     pages = PdfReader(BytesIO(data)).pages
     result = []
 
@@ -42,7 +44,7 @@ def show_pdf(data: bytes, s3_key: str, documents: list) -> None:
     annotations = _annotations(documents, s3_key, data)
     pdf_viewer(
         input=data,
-        key=hashlib.md5(data).hexdigest(),
+        key=f"pdf_{hashlib.md5(data).hexdigest()}",
         width="100%",
         height=1100,
         annotations=annotations,

@@ -4,16 +4,16 @@ from xml.sax.saxutils import escape
 import mammoth
 import streamlit as st
 
+from .metadata import doc_metadata, doc_text
+
 
 def _highlight(html: str, documents: list, s3_key: str) -> str:
-    from . import doc_metadata
-
+    """Подсвечивает в тексте документа фрагменты, найденные ретривером."""
     for doc in documents:
-        meta = doc_metadata(doc)
-        if meta.get("s3_key") != s3_key:
+        if doc_metadata(doc).get("s3_key") != s3_key:
             continue
 
-        text = (doc.get("text") if isinstance(doc, dict) else getattr(doc, "text", "")).strip()
+        text = doc_text(doc)
         if not text or text not in html:
             continue
 

@@ -14,6 +14,7 @@ _ICONS = {
     ".txt": ":material/article:",
     ".md": ":material/article:",
     ".json": ":material/article:",
+    ".docx": ":material/description:",
     ".mp4": ":material/movie:",
     ".mov": ":material/movie:",
     ".mp3": ":material/audio_file:",
