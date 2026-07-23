@@ -53,9 +53,14 @@ docker compose up --build    # UI на http://localhost:8501
 Локально без Docker:
 
 ```bash
-uv sync
-uv run streamlit run src/app.py
+uv sync                              # ОБЯЗАТЕЛЬНО: ставит streamlit-authenticator и др.
+uv run streamlit run src/app.py      # точка входа — только этот файл
 ```
+
+> Запускать нужно именно `src/app.py` из корня репозитория. Отдельные страницы
+> (`src/ui/chat.py` и т.п.) — не точки входа: они поднимаются через `app.py`
+> (аутентификация, состояние, навигация) и напрямую не запускаются.
+> После изменения зависимостей всегда `uv sync` — иначе `ModuleNotFoundError`.
 
 ## Конфигурация
 

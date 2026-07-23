@@ -5,6 +5,14 @@
 не рендерится.
 """
 
+import sys
+from pathlib import Path
+
+# src/ на sys.path: делает импорты (config, services, ui…) независимыми от того,
+# из какой директории и чем запущено приложение. Единственная точка входа —
+# этот файл: streamlit run src/app.py
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import streamlit as st
 
 st.set_page_config(
