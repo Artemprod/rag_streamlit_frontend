@@ -4,11 +4,18 @@
 хардкодим в коде — см. .env.example для полного списка переменных.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env ищем в корне проекта (на уровень выше src/), а не относительно CWD —
+# иначе запуск из другой директории терял конфиг. Переменные окружения читаются
+# в любом случае, даже если файла нет (актуально для Docker/compose).
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Config(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     # ── S3 / MinIO (исходные документы) ───────────────────────────────
     s3_endpoint_url: str
