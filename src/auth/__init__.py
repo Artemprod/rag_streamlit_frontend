@@ -13,7 +13,7 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 
-from config import config
+from config import INSECURE_COOKIE_KEY, config
 
 
 @st.cache_resource
@@ -44,7 +44,7 @@ def _build_authenticator() -> stauth.Authenticate:
 
 # Значения-заглушки из Config: если оставить в проде — подпись cookie и вход
 # становятся предсказуемыми. Предупреждаем прямо на экране входа.
-_INSECURE_DEFAULTS = {"change-me-in-prod", "change-me"}
+_INSECURE_DEFAULTS = {"change-me-in-prod", "change-me", INSECURE_COOKIE_KEY}
 
 
 def require_login() -> stauth.Authenticate:

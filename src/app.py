@@ -37,8 +37,10 @@ with st.sidebar:
 
 pages = st.navigation(
     [
-        st.Page(chat.render, title="Чат", icon="💬", default=True),
-        st.Page(upload.render, title="Загрузка", icon="📤"),
+        # url_path обязателен и уникален: обе функции называются render(),
+        # иначе st.navigation выведет одинаковый путь и упадёт.
+        st.Page(chat.render, title="Чат", icon="💬", url_path="chat", default=True),
+        st.Page(upload.render, title="Загрузка", icon="📤", url_path="upload"),
     ]
 )
 

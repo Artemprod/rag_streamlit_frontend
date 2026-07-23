@@ -13,6 +13,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # в любом случае, даже если файла нет (актуально для Docker/compose).
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
+# Дефолт ключа cookie ≥32 байт: короче — PyJWT ругается InsecureKeyLengthWarning.
+# Это заглушка для dev; в проде обязательно переопределить AUTH_COOKIE_KEY.
+INSECURE_COOKIE_KEY = "dev-insecure-cookie-key-change-me-before-production"
+
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
@@ -40,7 +44,7 @@ class Config(BaseSettings):
     admin_name: str = "Администратор"
     admin_password: str
     # Секрет для подписи cookie сессии. В проде задать длинным случайным.
-    auth_cookie_key: str = "change-me-in-prod"
+    auth_cookie_key: str = INSECURE_COOKIE_KEY
     auth_cookie_name: str = "rag_ui_auth"
     auth_cookie_expiry_days: float = 7.0
 
