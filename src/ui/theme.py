@@ -11,10 +11,13 @@ import streamlit as st
 
 _CSS = """
 <style>
-  /* Контент не растягивается на сверхшироких мониторах, меньше пустоты сверху. */
+  /* Комфортная ширина чтения и центрирование: на широких мониторах контент
+     не растягивается в разреженную полосу. Широкие превью (PDF/таблицы)
+     живут в модалке, поэтому телу страницы широкая ширина не нужна. */
   [data-testid="stMainBlockContainer"] {
-    padding-top: 2.2rem;
-    max-width: 1400px;
+    padding-top: 2rem;
+    max-width: 1040px;
+    margin: 0 auto;
     overflow-x: hidden;               /* страница не едет вбок */
   }
 
@@ -22,12 +25,23 @@ _CSS = """
   [data-testid="stMainBlockContainer"] img,
   [data-testid="stMainBlockContainer"] iframe { max-width: 100% !important; }
 
-  /* Сообщения чата — мягкая карточка вместо «голого» блока. */
+  /* Сообщения чата — мягкая карточка вместо «голого» блока, чуть больше воздуха. */
   [data-testid="stChatMessage"] {
     background: var(--secondary-background-color, #f5f6fb);
     border-radius: 0.9rem;
-    padding: 0.4rem 0.9rem;
-    margin-bottom: 0.35rem;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.6rem;
+  }
+
+  /* Источники под ответом — «строки-файлы»: текст слева, мягкий hover. */
+  [data-testid="stChatMessage"] [data-testid="stButton"] > button {
+    justify-content: flex-start;
+    text-align: left;
+    font-weight: 500;
+  }
+  [data-testid="stChatMessage"] [data-testid="stButton"] > button:hover {
+    background: rgba(99, 102, 241, 0.10);
+    border-color: #6366f1;
   }
 
   [data-testid="stButton"] > button p { font-weight: 500; }

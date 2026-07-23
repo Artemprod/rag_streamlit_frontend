@@ -1,9 +1,10 @@
 """Отрисовка документов-источников под ответом.
 
-Каждый источник — кликабельная карточка: клик выбирает файл для просмотра
-в правой колонке (проставляет selected_file и связанные с ним источники).
+Каждый источник — кликабельная карточка: клик передаётся в on_select
+(на странице чата открывает документ в модальном окне).
 """
 
+from collections.abc import Callable
 from pathlib import PurePosixPath
 
 import streamlit as st
@@ -15,11 +16,16 @@ def _source_key(doc: dict) -> str | None:
     return doc_metadata(doc).get("s3_key")
 
 
-def render_sources(documents: list[dict], *, ns: str) -> None:
+def render_sources(
+    documents: list[dict],
+    *,
+    ns: str,
+    on_select: Callable[[str, list[dict]], None],
+) -> None:
     """Показывает уникальные файлы-источники как кнопки.
 
-    ns — префикс для ключей виджетов, чтобы кнопки в разных сообщениях чата
-    не конфликтовали.
+    ns — префикс ключей виджетов, чтобы кнопки в разных сообщениях чата
+    не конфликтовали. on_select(s3_key, documents) вызывается по клику.
     """
     if not documents:
         return
@@ -43,6 +49,4 @@ def render_sources(documents: list[dict], *, ns: str) -> None:
             width="stretch",
             key=f"src_{ns}_{s3_key}",
         ):
-            st.session_state.selected_file = s3_key
-            st.session_state.selected_sources = documents
-            st.rerun()
+            on_select(s3_key, documents)

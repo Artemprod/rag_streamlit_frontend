@@ -43,26 +43,28 @@ def _record_job(
 
 
 def _render_uploader() -> None:
-    st.subheader("Выбор документов")
+    # Основной сценарий — просто перетащить файлы. Папка вынесена вторично.
     files = st.file_uploader(
-        "Файлы",
+        "Перетащите файлы сюда или выберите",
         accept_multiple_files=True,
         width="stretch",
         key=f"file_uploader_{st.session_state.uploader_key}",
     )
-    folder = st.file_uploader(
-        "Папка",
-        accept_multiple_files="directory",
-        width="stretch",
-        key=f"folder_uploader_{st.session_state.uploader_key}",
-    )
+    with st.expander("📁 …или загрузить папку целиком"):
+        folder = st.file_uploader(
+            "Папка",
+            accept_multiple_files="directory",
+            width="stretch",
+            label_visibility="collapsed",
+            key=f"folder_uploader_{st.session_state.uploader_key}",
+        )
 
     uploaded = (files or []) + (folder or [])
-    if not uploaded:
-        return
+    if uploaded:
+        st.success(f"Выбрано файлов: **{len(uploaded)}**")
 
-    st.info(f"Выбрано файлов: **{len(uploaded)}**")
-
+    # Настройки и кнопка видны всегда — понятно, что будет дальше. Кнопка
+    # неактивна, пока не выбраны файлы или пока идёт заливка.
     col_ds, col_ctx = st.columns(2)
     dataset = col_ds.text_input(
         "Датасет", value="yello", help="Логическая группа документов"
@@ -80,7 +82,7 @@ def _render_uploader() -> None:
         "🚀 Сохранить и обработать",
         width="stretch",
         type="primary",
-        disabled=busy,
+        disabled=busy or not uploaded,
     ):
         st.session_state.upload_futures = s3_service.upload_async(uploaded)
         st.session_state.upload_meta = {

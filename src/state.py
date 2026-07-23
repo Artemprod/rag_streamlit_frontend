@@ -10,9 +10,6 @@ import streamlit as st
 _DEFAULTS: dict = {
     # Чат: история сообщений [{role, content, sources}]
     "messages": [],
-    # Ключ выбранного для просмотра файла (s3_key) и его источники
-    "selected_file": None,
-    "selected_sources": [],
     # Загрузка: фьючерсы фоновой заливки в S3 и метаданные пакета
     "upload_futures": None,
     "upload_meta": None,

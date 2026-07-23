@@ -1,8 +1,9 @@
 """Страница «Чат» — основной сценарий: вопрос → ответ по документам.
 
-Слева диалог с историей и источниками, справа предпросмотр выбранного
-документа с подсветкой найденного фрагмента. Ответы хранятся в истории
-сессии, поэтому reruns (клик по источнику) не дёргают LLM повторно.
+Диалог занимает всю ширину; документ-источник открывается по клику в
+модальном окне (st.dialog), а не в постоянной колонке — так не остаётся
+пустой половины экрана. Ответы хранятся в истории сессии, поэтому reruns
+(клик по источнику) не дёргают LLM повторно.
 """
 
 import streamlit as st
@@ -17,6 +18,17 @@ _EXAMPLES = [
     "Найди упоминания сроков и дат",
     "Сделай краткое резюме по загруженным файлам",
 ]
+
+
+@st.dialog("Просмотр документа", width="large")
+def _preview_dialog(s3_key: str, documents: list) -> None:
+    st.caption(s3_key.rsplit("/", 1)[-1])
+    preview_file(s3_key, documents)
+
+
+def _open_preview(s3_key: str, documents: list) -> None:
+    """Колбэк выбора источника: открывает документ в модалке."""
+    _preview_dialog(s3_key, documents)
 
 
 def _handle_prompt(prompt: str) -> None:
@@ -53,9 +65,17 @@ def _render_welcome() -> None:
         "Я найду ответ по загруженным файлам и покажу источники — "
         "кликните любой, чтобы открыть его с подсветкой."
     )
+    if not retrieval_client.is_configured():
+        st.info(
+            "Пока не заданы `RETRIEVAL_URL` / `RETRIEVAL_API_KEY` — ответы "
+            "недоступны. Документы уже можно загружать во вкладке **Загрузка**.",
+            icon="ℹ️",
+        )
+        return
+
     st.caption("С чего начать:")
     for idx, example in enumerate(_EXAMPLES):
-        if st.button(f"💡 {example}", key=f"ex_{idx}", width="stretch"):
+        if st.button(f"💡 {example}", key=f"ex_{idx}", width="content"):
             _handle_prompt(example)
             st.rerun()
 
@@ -65,56 +85,25 @@ def _render_history() -> None:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message["role"] == "assistant":
-                render_sources(message.get("sources", []), ns=str(i))
-
-
-def _render_preview() -> None:
-    selected = st.session_state.selected_file
-    if not selected:
-        st.info("Выберите документ-источник слева, чтобы открыть его здесь.")
-        return
-
-    header = st.container()
-    with header:
-        cols = st.columns([0.85, 0.15])
-        cols[0].subheader(selected.rsplit("/", 1)[-1])
-        if cols[1].button("✕", key="close_preview", help="Закрыть просмотр"):
-            st.session_state.selected_file = None
-            st.session_state.selected_sources = []
-            st.rerun()
-
-    preview_file(selected, st.session_state.selected_sources)
+                render_sources(
+                    message.get("sources", []), ns=str(i), on_select=_open_preview
+                )
 
 
 def render() -> None:
-    title_col, clear_col = st.columns([0.8, 0.2], vertical_alignment="center")
+    title_col, clear_col = st.columns([0.75, 0.25], vertical_alignment="center")
     title_col.title("💬 Спросить документы")
     if st.session_state.messages and clear_col.button(
         "🧹 Очистить", width="stretch", help="Очистить историю диалога"
     ):
         st.session_state.messages = []
-        st.session_state.selected_file = None
-        st.session_state.selected_sources = []
         st.rerun()
 
-    if not retrieval_client.is_configured():
-        st.warning(
-            "Сервис поиска не подключён (не заданы RETRIEVAL_URL / RETRIEVAL_API_KEY). "
-            "Загрузка документов работает, ответы на вопросы — пока нет."
-        )
+    if st.session_state.messages:
+        _render_history()
+    else:
+        _render_welcome()
 
-    conversation, preview = st.columns([0.5, 0.5], gap="large")
-    with conversation:
-        if st.session_state.messages:
-            _render_history()
-        else:
-            _render_welcome()
-
-    with preview:
-        _render_preview()
-
-    # chat_input обязан быть в основной области (не в колонке) — Streamlit
-    # закрепит его внизу страницы.
     if prompt := st.chat_input("Спросите что-нибудь о документах…"):
         _handle_prompt(prompt)
         st.rerun()
