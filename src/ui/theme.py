@@ -11,8 +11,16 @@ import streamlit as st
 
 _CSS = """
 <style>
-  /* Чуть уже колонка контента и меньше пустоты сверху — плотнее и опрятнее. */
-  .stMainBlockContainer { padding-top: 2.2rem; max-width: 1400px; }
+  /* Контент не растягивается на сверхшироких мониторах, меньше пустоты сверху. */
+  [data-testid="stMainBlockContainer"] {
+    padding-top: 2.2rem;
+    max-width: 1400px;
+    overflow-x: hidden;               /* страница не едет вбок */
+  }
+
+  /* Медиа никогда не выходят за ширину контейнера. */
+  [data-testid="stMainBlockContainer"] img,
+  [data-testid="stMainBlockContainer"] iframe { max-width: 100% !important; }
 
   /* Сообщения чата — мягкая карточка вместо «голого» блока. */
   [data-testid="stChatMessage"] {
@@ -22,11 +30,26 @@ _CSS = """
     margin-bottom: 0.35rem;
   }
 
-  /* Кнопки-источники: убираем «кнопочность», делаем их похожими на строки-ссылки. */
   [data-testid="stButton"] > button p { font-weight: 500; }
-
-  /* Заголовки чуть плотнее к тексту. */
   h1, h2, h3 { letter-spacing: -0.01em; }
+
+  /* ── Адаптивность: планшеты и телефоны ──────────────────────────────
+     На узких экранах любые колонки (чат/просмотр, dataset/контекст,
+     заголовок+кнопка) складываются в один столбец на всю ширину — ничего
+     не наезжает и не сжимается в нечитаемую полоску. */
+  @media (max-width: 992px) {
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"] > div {
+      flex: 0 0 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+    }
+    [data-testid="stMainBlockContainer"] {
+      padding-left: 0.9rem !important;
+      padding-right: 0.9rem !important;
+    }
+  }
 </style>
 """
 

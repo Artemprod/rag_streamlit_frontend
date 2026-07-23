@@ -30,7 +30,11 @@ def show_docx(data: bytes, s3_key: str, documents: list) -> None:
     result = mammoth.convert_to_html(BytesIO(data))
     html = _highlight(result.value, documents, s3_key)
 
+    # padding через clamp — узкий на телефоне, просторный на десктопе; overflow-wrap
+    # и max-width, чтобы длинные слова/таблицы не выталкивали вёрстку вбок.
     st.html(
-        f'<div style="background:#fff;color:#1a1a1a;padding:48px 40px;'
-        f'border-radius:8px;line-height:1.75;font-size:15.5px;">{html}</div>'
+        f'<div style="background:#fff;color:#1a1a1a;'
+        f"padding:clamp(16px,4vw,48px);border-radius:8px;line-height:1.75;"
+        f"font-size:15.5px;max-width:100%;overflow-wrap:break-word;"
+        f'overflow-x:auto;">{html}</div>'
     )
