@@ -124,7 +124,12 @@ def _render_progress() -> None:
             file_names=meta.get("file_names", s3_keys),
             status="queued",
         )
-        st.success(f"Принято в обработку: {result.get('files', len(s3_keys))} файл(ов)")
+        # st.toast, а не st.success: фрагмент run_every="1s" на следующем тике
+        # затрёт любой элемент в своём контейнере, а тост живёт независимо.
+        st.toast(
+            f"Принято в обработку: {result.get('files', len(s3_keys))} файл(ов)",
+            icon="✅",
+        )
     except ProcessError as error:
         _record_job(
             dataset=meta.get("dataset", "yello"),
@@ -132,7 +137,7 @@ def _render_progress() -> None:
             status="failed",
             error=str(error),
         )
-        st.error(f"Не удалось поставить на обработку: {error}")
+        st.toast(f"Не удалось поставить на обработку: {error}", icon="❌")
     except Exception as error:
         _record_job(
             dataset=meta.get("dataset", "yello"),
@@ -140,7 +145,7 @@ def _render_progress() -> None:
             status="failed",
             error=str(error),
         )
-        st.error(f"Ошибка заливки: {error}")
+        st.toast(f"Ошибка заливки: {error}", icon="❌")
 
 
 def _render_history() -> None:
