@@ -42,11 +42,25 @@ def _build_authenticator() -> stauth.Authenticate:
     )
 
 
+# Значения-заглушки из Config: если оставить в проде — подпись cookie и вход
+# становятся предсказуемыми. Предупреждаем прямо на экране входа.
+_INSECURE_DEFAULTS = {"change-me-in-prod", "change-me"}
+
+
 def require_login() -> stauth.Authenticate:
     """Гейт на входе: без успешного логина скрипт дальше не идёт.
 
     Возвращает authenticator, чтобы страницы могли отрисовать логаут в сайдбаре.
     """
+    if (
+        config.auth_cookie_key in _INSECURE_DEFAULTS
+        or config.admin_password in _INSECURE_DEFAULTS
+    ):
+        st.warning(
+            "⚠️ Используются значения по умолчанию для пароля/секрета cookie. "
+            "Задайте ADMIN_PASSWORD и AUTH_COOKIE_KEY в окружении перед продом."
+        )
+
     authenticator = _build_authenticator()
     authenticator.login(
         location="main",
