@@ -46,11 +46,21 @@ def _handle_prompt(prompt: str) -> None:
         )
 
 
-def _render_history() -> None:
-    if not st.session_state.messages:
-        st.info("Задайте вопрос по загруженным документам — ответ появится здесь.")
-        return
+def _render_welcome() -> None:
+    """Дружелюбный пустой экран: приветствие + примеры вопросов-«чипов»."""
+    st.markdown(
+        "#### 👋 Привет! Спросите что угодно о ваших документах\n"
+        "Я найду ответ по загруженным файлам и покажу источники — "
+        "кликните любой, чтобы открыть его с подсветкой."
+    )
+    st.caption("С чего начать:")
+    for idx, example in enumerate(_EXAMPLES):
+        if st.button(f"💡 {example}", key=f"ex_{idx}", width="stretch"):
+            _handle_prompt(example)
+            st.rerun()
 
+
+def _render_history() -> None:
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -95,15 +105,10 @@ def render() -> None:
 
     conversation, preview = st.columns([0.5, 0.5], gap="large")
     with conversation:
-        _render_history()
-
-        # Быстрые примеры показываем, пока диалог пуст.
-        if not st.session_state.messages:
-            st.caption("Примеры вопросов:")
-            for idx, example in enumerate(_EXAMPLES):
-                if st.button(example, key=f"ex_{idx}", width="stretch"):
-                    _handle_prompt(example)
-                    st.rerun()
+        if st.session_state.messages:
+            _render_history()
+        else:
+            _render_welcome()
 
     with preview:
         _render_preview()
