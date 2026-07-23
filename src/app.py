@@ -31,9 +31,8 @@ theme.inject_base_styles()
 authenticator = auth.require_login()
 init_state()
 
-with st.sidebar:
-    sidebar.render_brand()
-    st.divider()
+# Логотип рисуется в своём слоте над меню — вызываем до навигации.
+sidebar.render_brand()
 
 pages = st.navigation(
     [

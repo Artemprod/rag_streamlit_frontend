@@ -10,10 +10,14 @@
 пароля, поэтому хэш считаем один раз и кэшируем ресурсом.
 """
 
+import logging
+
 import streamlit as st
 import streamlit_authenticator as stauth
 
 from config import INSECURE_COOKIE_KEY, config
+
+_log = logging.getLogger("rag.auth")
 
 
 @st.cache_resource
@@ -43,8 +47,18 @@ def _build_authenticator() -> stauth.Authenticate:
 
 
 # Значения-заглушки из Config: если оставить в проде — подпись cookie и вход
-# становятся предсказуемыми. Предупреждаем прямо на экране входа.
+# становятся предсказуемыми.
 _INSECURE_DEFAULTS = {"change-me-in-prod", "change-me", INSECURE_COOKIE_KEY}
+# mutable-флаг вместо global: предупреждаем в лог один раз на процесс.
+_warned_insecure: list = []
+
+
+def using_insecure_defaults() -> bool:
+    """True, если пароль или секрет cookie остались дефолтными (dev-режим)."""
+    return (
+        config.auth_cookie_key in _INSECURE_DEFAULTS
+        or config.admin_password in _INSECURE_DEFAULTS
+    )
 
 
 def require_login() -> stauth.Authenticate:
@@ -52,14 +66,13 @@ def require_login() -> stauth.Authenticate:
 
     Возвращает authenticator, чтобы страницы могли отрисовать логаут в сайдбаре.
     """
-    if (
-        config.auth_cookie_key in _INSECURE_DEFAULTS
-        or config.admin_password in _INSECURE_DEFAULTS
-    ):
-        st.warning(
-            "⚠️ Используются значения по умолчанию для пароля/секрета cookie. "
-            "Задайте ADMIN_PASSWORD и AUTH_COOKIE_KEY в окружении перед продом."
+    if using_insecure_defaults() and not _warned_insecure:
+        # В логи (для разработчика), а не баннером в лицо пользователю.
+        _log.warning(
+            "Заданы значения по умолчанию для ADMIN_PASSWORD/AUTH_COOKIE_KEY — "
+            "переопределите их в окружении перед продом."
         )
+        _warned_insecure.append(True)
 
     authenticator = _build_authenticator()
     authenticator.login(
