@@ -27,14 +27,27 @@ def get_s3() -> s3fs.S3FileSystem:
     )
 
 
+def _safe_key(name: str) -> str:
+    """Относительный путь → безопасный ключ внутри бакета.
+
+    Сохраняем структуру папок (важно при загрузке директории, иначе
+    a/report.pdf и b/report.pdf схлопнутся), но убираем ведущие слэши и
+    обход каталогов (`..`), чтобы не выйти за пределы бакета.
+    """
+    parts = [
+        part
+        for part in PurePosixPath(name.replace("\\", "/")).parts
+        if part not in ("", "/", "..")
+    ]
+    return "/".join(parts) or "file"
+
+
 def _put(name: str, data: bytes) -> str:
     """Выполняется в фоновом потоке — никаких st.* внутри.
 
-    Имя санитизируем до basename: у загрузки папки в name может быть путь.
-    Возвращает durable s3_key вида 'bucket/file.pdf'.
+    Возвращает durable s3_key вида 'bucket/dir/file.pdf'.
     """
-    safe_name = PurePosixPath(name).name
-    key = f"{config.s3_bucket}/{safe_name}"
+    key = f"{config.s3_bucket}/{_safe_key(name)}"
     with get_s3().open(key, "wb") as dst:
         dst.write(data)
     return key
