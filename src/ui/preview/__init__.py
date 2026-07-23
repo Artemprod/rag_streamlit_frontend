@@ -1,32 +1,40 @@
+"""Диспетчер предпросмотра документов по типу файла.
+
+Байты берём из S3 (кэшируются), рендерим по расширению. Для PDF/DOCX
+подсвечиваем фрагменты, которые вернул ретривер (documents).
+"""
+
 import json
 from io import BytesIO
 from pathlib import PurePosixPath
-from typing import Any
 
 import pandas as pd
 import streamlit as st
-import storage
+
+from services import s3
 
 from .docx import show_docx
 from .icons import icon_for
+from .metadata import doc_metadata, doc_text
 from .pdf import show_pdf
 from .table import show_table
-from .metadata import doc_metadata
 
-__all__ = ["preview_file", "icon_for", "doc_metadata"]
+__all__ = ["doc_metadata", "doc_text", "icon_for", "preview_file"]
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 TEXT_EXTS = {".txt", ".md", ".py", ".yaml", ".yml"}
-
 
 
 def preview_file(s3_key: str, documents: list | None = None) -> None:
     documents = documents or []
     name = PurePosixPath(s3_key).name
     ext = PurePosixPath(s3_key).suffix.lower()
-    st.subheader(name)
 
-    data = storage.read(s3_key)
+    try:
+        data = s3.read(s3_key)
+    except Exception as error:
+        st.error(f"Не удалось загрузить файл из хранилища: {error}")
+        return
 
     if ext == ".pdf":
         show_pdf(data, s3_key, documents)
