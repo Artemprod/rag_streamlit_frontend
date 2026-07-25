@@ -290,7 +290,7 @@ def render() -> None:
     st.title("📤 Загрузка документов")
     st.caption(
         "Добавьте файлы или папку — они уйдут на обработку и станут доступны "
-        "для вопросов в чате. Поддерживаются PDF, DOCX/DOC, PPTX, XLSX/XLS, "
+        "для вопросов в чате. Поддерживаются PDF, DOCX, PPTX, XLSX/XLS, "
         "CSV, MD, TXT."
     )
     _render_uploader()
