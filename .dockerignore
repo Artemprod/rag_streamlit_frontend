@@ -1,0 +1,41 @@
+# Контекст сборки: пускаем внутрь только то, что нужно образу.
+# Dockerfile копирует pyproject.toml, uv.lock, .streamlit и src — остальное лишь
+# раздувает
+# контекст и замедляет сборку, а секреты и вовсе не должны туда попадать.
+
+# Секреты — критично: .env содержит ключи API и пароли БД
+.env
+.env.*
+!.env.example
+
+# История git (десятки мегабайт)
+.git
+.gitignore
+
+# Виртуальные окружения и кэши
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+.ruff_cache
+.pytest_cache
+.mypy_cache
+
+# Локальное состояние и артефакты
+*.sqlite
+*.sqlite3
+*.log
+
+# IDE и ОС
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Инфраструктура — в образ не нужна
+docker-compose.yml
+.dockerignore
+Dockerfile
+README.md

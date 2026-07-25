@@ -75,6 +75,15 @@ def _get(path: str):
     return response.json()
 
 
+def health() -> bool:
+    """Отвечает ли сервис. /health не требует API-ключа."""
+    try:
+        response = httpx.get(f"{config.process_url}/health", timeout=_POLL_TIMEOUT)
+        return response.is_success
+    except httpx.HTTPError:
+        return False
+
+
 def process(
     s3_keys: list[str], dataset: str, domain_context: str | None = None
 ) -> dict:
