@@ -10,14 +10,11 @@
 пароля, поэтому хэш считаем один раз и кэшируем ресурсом.
 """
 
-import logging
-
 import streamlit as st
 import streamlit_authenticator as stauth
+from loguru import logger
 
 from config import INSECURE_COOKIE_KEY, config
-
-_log = logging.getLogger("rag.auth")
 
 
 @st.cache_resource
@@ -68,7 +65,7 @@ def require_login() -> stauth.Authenticate:
     """
     if using_insecure_defaults() and not _warned_insecure:
         # В логи (для разработчика), а не баннером в лицо пользователю.
-        _log.warning(
+        logger.warning(
             "Заданы значения по умолчанию для ADMIN_PASSWORD/AUTH_COOKIE_KEY — "
             "переопределите их в окружении перед продом."
         )
