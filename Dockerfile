@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY .streamlit ./.streamlit
 COPY src ./src
 
+EXPOSE 8501
 ENTRYPOINT ["streamlit", "run", "src/app.py", \
             "--server.address=0.0.0.0", \
             "--server.headless=true", \

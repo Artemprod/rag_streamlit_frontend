@@ -15,6 +15,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import config
 
+# Пробник живости — короткий запрос. Общий request_timeout (минуты) сюда не
+# годится: сайдбар не должен ждать минуту, чтобы показать статус.
+_HEALTH_TIMEOUT = 5
+
 
 class SearchNotReady(RuntimeError):
     """Retrieval-сервис не сконфигурирован (нет URL/ключа в окружении)."""
@@ -26,6 +30,17 @@ class SearchError(RuntimeError):
 
 def is_configured() -> bool:
     return bool(config.retrieval_url and config.retrieval_api_key)
+
+
+def health() -> bool:
+    """Отвечает ли сервис. /health не требует API-ключа."""
+    if not is_configured():
+        return False
+    try:
+        response = httpx.get(f"{config.retrieval_url}/health", timeout=_HEALTH_TIMEOUT)
+        return response.is_success
+    except httpx.HTTPError:
+        return False
 
 
 @retry(

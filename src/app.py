@@ -15,6 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import streamlit as st
 
+from logging_setup import setup_logging
+
+setup_logging()
+
 st.set_page_config(
     page_title="RAG · Спросить документы",
     page_icon="📚",

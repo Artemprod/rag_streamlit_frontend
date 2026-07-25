@@ -11,7 +11,7 @@ import streamlit as st
 
 import auth
 from config import config
-from services import retrieval_client
+from services import process_client, retrieval_client
 
 # SVG-вордмарк как data-URI: без бинарного ассета, цвета читаемы и на светлой,
 # и на тёмной теме (иконка — градиент, «Документы» — нейтральный серый).
@@ -36,18 +36,33 @@ def render_brand() -> None:
     st.logo(_LOGO_URI, size="large")
 
 
+# Статус опрашиваем не чаще раза в 15с: Streamlit переисполняет скрипт на
+# каждое действие, а дёргать /health на каждый rerun незачем.
+@st.cache_data(ttl=15, show_spinner=False)
+def _probe() -> tuple[bool, bool]:
+    """Живость сервисов обработки и поиска (по их /health)."""
+    return process_client.health(), retrieval_client.health()
+
+
+def _status_line(label: str, *, configured: bool, alive: bool) -> str:
+    if not configured:
+        return f"⚪ {label} — не подключён"
+    return f"🟢 {label} — доступен" if alive else f"🔴 {label} — не отвечает"
+
+
 def render_status() -> None:
-    """Компактный статус сервисов: 🟢 готов / ⚪ не подключён."""
-    process_ok = bool(config.process_api_key)
-    search_ok = retrieval_client.is_configured()
+    """Статус сервисов по реальному пробнику, а не по наличию ключа в конфиге."""
+    process_alive, search_alive = _probe()
 
     st.caption(
-        f"{'🟢' if search_ok else '⚪'} Поиск ответов "
-        f"{'подключён' if search_ok else 'не подключён'}"
+        _status_line("Обработка", configured=bool(config.process_url), alive=process_alive)
     )
     st.caption(
-        f"{'🟢' if process_ok else '⚪'} Обработка "
-        f"{'подключена' if process_ok else 'не подключена'}"
+        _status_line(
+            "Поиск ответов",
+            configured=retrieval_client.is_configured(),
+            alive=search_alive,
+        )
     )
     if auth.using_insecure_defaults():
         st.caption("⚠️ dev-режим: заданы значения секретов по умолчанию")
