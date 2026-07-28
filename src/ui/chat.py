@@ -7,6 +7,7 @@
 """
 
 import random
+from concurrent.futures import ThreadPoolExecutor
 from html import escape
 
 import streamlit as st
@@ -49,6 +50,11 @@ _MODES = {
 }
 _DEFAULT_MODE_LABEL = next(iter(_MODES))
 
+# Поиск ответа выполняется в фоновом потоке: прогон страницы Streamlit
+# обрывается при переходе на другую вкладку, а поток и future в session_state
+# живут — вернулся на «Чат», и поиск продолжается с того же места.
+_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ask")
+
 
 def _current_mode_label() -> str:
     label = st.session_state.get("chat_mode") or _DEFAULT_MODE_LABEL
@@ -88,54 +94,58 @@ def _open_preview(s3_key: str, documents: list) -> None:
     _preview_dialog(s3_key, documents)
 
 
-def _wait_for_answer(prompt: str, mode: str):
-    """Пока сервис ищет — вопрос уже на экране, ассистент «печатает».
-
-    Под точками крутятся фразы (стилизованный CSS-цикл): видно, что процесс
-    идёт, и ожидание переносится веселее.
-    """
-    phrases = "".join(
-        f"<span>{escape(text)}</span>" for text in random.sample(_SEARCH_PHRASES, 4)
-    )
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    with st.chat_message("assistant"):
-        st.html(
-            '<div class="typing"><span></span><span></span><span></span></div>'
-            f'<div class="phrases">{phrases}</div>'
-        )
-        return retrieval_client.ask(prompt, mode=mode)
-
-
 def _handle_prompt(prompt: str) -> None:
-    """Добавляет вопрос в историю, получает ответ, автосохраняет диалог."""
+    """Кладёт вопрос в историю и запускает поиск в фоне (не блокируя UI)."""
     label = _current_mode_label()
-    mode = _MODES[label][0]
     st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.pending = {
+        "future": _EXECUTOR.submit(retrieval_client.ask, prompt, _MODES[label][0]),
+        "mode": label,
+        # Фразы выбираются один раз на запрос: индикатор рисуется вне
+        # фрагмента-опросчика, и CSS-цикл не сбрасывается каждый тик.
+        "phrases_html": "".join(
+            f"<span>{escape(text)}</span>"
+            for text in random.sample(_SEARCH_PHRASES, 4)
+        ),
+    }
+
+
+def _finish_pending(pending: dict) -> None:
+    """Разбирает завершённый future в сообщение и автосохраняет диалог."""
     try:
-        answer, sources = _wait_for_answer(prompt, mode)
-        st.session_state.messages.append(
-            {"role": "assistant", "content": answer, "sources": sources, "mode": label}
-        )
+        answer, sources = pending["future"].result()
+        message = {
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
+            "mode": pending["mode"],
+        }
     except SearchNotReady as error:
-        st.session_state.messages.append(
-            {"role": "assistant", "content": f"ℹ️ {error}", "sources": []}
-        )
+        message = {"role": "assistant", "content": f"ℹ️ {error}", "sources": []}
     except SearchError as error:
-        st.session_state.messages.append(
-            {"role": "assistant", "content": f"⚠️ {error}", "sources": []}
-        )
+        message = {"role": "assistant", "content": f"⚠️ {error}", "sources": []}
     except Exception as error:  # неожиданное не должно ронять всю страницу
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": f"⚠️ Непредвиденная ошибка: {error}",
-                "sources": [],
-            }
-        )
+        message = {
+            "role": "assistant",
+            "content": f"⚠️ Непредвиденная ошибка: {error}",
+            "sources": [],
+        }
+    st.session_state.messages.append(message)
     st.session_state.chat_id = chats.save(
         st.session_state.chat_id, st.session_state.messages
     )
+
+
+@st.fragment(run_every="1s")
+def _poll_pending() -> None:
+    """Тихо опрашивает фоновый поиск. Сам ничего не рисует: индикатор стоит
+    снаружи фрагмента и не перерисовывается (анимация не дёргается), а по
+    готовности ответа фрагмент просит полный ререн страницы."""
+    pending = st.session_state.pending
+    if pending and pending["future"].done():
+        st.session_state.pending = None
+        _finish_pending(pending)
+        st.rerun(scope="app")
 
 
 def _render_welcome() -> None:
@@ -204,6 +214,17 @@ def render() -> None:
     else:
         _render_welcome()
 
+    # Идёт поиск: печатающий индикатор (вне фрагмента — анимация стабильна)
+    # и фрагмент-опросчик, который дождётся ответа даже после ухода на другую
+    # вкладку и возвращения.
+    if st.session_state.pending:
+        with st.chat_message("assistant"):
+            st.html(
+                '<div class="typing"><span></span><span></span><span></span></div>'
+                f'<div class="phrases">{st.session_state.pending["phrases_html"]}</div>'
+            )
+        _poll_pending()
+
     # Переключатель режима действует на следующий вопрос; описание выбранного
     # режима — цветной строкой, тем же цветом помечаются его ответы в истории.
     st.pills(
@@ -218,6 +239,7 @@ def render() -> None:
     label = _current_mode_label()
     _, placeholder, color, description = _MODES[label]
     st.markdown(f":{color}-background[{label} — {description}]")
-    if prompt := st.chat_input(placeholder):
+    # Пока идёт поиск, новый вопрос не принимаем — ответ пришёл бы вперемешку.
+    if prompt := st.chat_input(placeholder, disabled=bool(st.session_state.pending)):
         _handle_prompt(prompt)
         st.rerun()

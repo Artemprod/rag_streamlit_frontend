@@ -85,6 +85,7 @@ def render_chat_history(chat_page) -> None:
     if st.button("✚ Новый чат", width="stretch"):
         st.session_state.messages = []
         st.session_state.chat_id = None
+        st.session_state.pending = None  # ответ старого поиска — не в новый чат
         st.switch_page(chat_page)
 
     saved = chats.summaries()
@@ -100,4 +101,5 @@ def render_chat_history(chat_page) -> None:
             ):
                 st.session_state.messages = chats.get(chat["id"])
                 st.session_state.chat_id = chat["id"]
+                st.session_state.pending = None
                 st.switch_page(chat_page)

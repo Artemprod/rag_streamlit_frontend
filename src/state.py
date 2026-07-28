@@ -12,6 +12,9 @@ _DEFAULTS: dict = {
     "messages": [],
     # id сохранённого диалога (None — новый, ещё не сохранялся)
     "chat_id": None,
+    # Идущий поиск ответа: {future, mode, phrases_html} или None. Живёт в
+    # сессии, поэтому переключение вкладок его не убивает.
+    "pending": None,
     # Загрузка: фьючерсы фоновой заливки в S3 и метаданные пакета
     "upload_futures": None,
     "upload_meta": None,
