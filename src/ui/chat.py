@@ -153,7 +153,7 @@ def _handle_prompt(prompt: str, label: str | None = None) -> None:
         # фрагмента-опросчика, и CSS-цикл не сбрасывается каждый тик.
         "phrases_html": "".join(
             f"<span>{escape(text)}</span>"
-            for text in _SEARCH_PHRASES
+            for text in random.sample(_SEARCH_PHRASES, len(_SEARCH_PHRASES))
         ),
     }
 
