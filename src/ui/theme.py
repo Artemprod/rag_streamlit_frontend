@@ -21,10 +21,13 @@ _CSS = """
   /* Комфортная ширина чтения и центрирование: на широких мониторах контент
      не растягивается в разреженную полосу. Широкие превью (PDF/таблицы)
      живут в модалке, поэтому телу страницы широкая ширина не нужна. */
-  [data-testid="stMainBlockContainer"] {
-    padding-top: 2rem;
+  [data-testid="stMainBlockContainer"],
+  [data-testid="stBottomBlockContainer"] {
     max-width: 1040px;
     margin: 0 auto;
+  }
+  [data-testid="stMainBlockContainer"] {
+    padding-top: 2rem;
     overflow-x: hidden;               /* страница не едет вбок */
   }
 
@@ -72,9 +75,25 @@ _CSS = """
     40%           { transform: translateY(-0.28rem); opacity: 0.9;  }
   }
 
+  /* Сменные фразы под точками: 4 span'а по очереди, цикл 11.2с. */
+  .phrases { position: relative; height: 1.5em; margin-top: .35rem; opacity: .75; }
+  .phrases span {
+    position: absolute; left: 0; white-space: nowrap;
+    opacity: 0; animation: phrase 11.2s linear infinite;
+  }
+  .phrases span:nth-child(2) { animation-delay: 2.8s; }
+  .phrases span:nth-child(3) { animation-delay: 5.6s; }
+  .phrases span:nth-child(4) { animation-delay: 8.4s; }
+  @keyframes phrase {
+    0% { opacity: 0; } 3% { opacity: 1; } 22% { opacity: 1; }
+    25% { opacity: 0; } 100% { opacity: 0; }
+  }
+
   /* Уважаем системную настройку «меньше движения». */
   @media (prefers-reduced-motion: reduce) {
     .typing span { animation: none; opacity: 0.5; }
+    .phrases span { animation: none; }
+    .phrases span:first-child { opacity: 1; }
   }
 
   /* ── Адаптивность: планшеты и телефоны ──────────────────────────────
@@ -101,3 +120,17 @@ _CSS = """
 def inject_base_styles() -> None:
     """Вставляет косметический CSS. Вызывать один раз за прогон, после page_config."""
     st.html(_CSS)
+
+
+def wide(max_width: str = "100%") -> None:
+    """Растягивает контент текущей страницы шире базовых 1040px.
+
+    CSS живёт только в прогоне вызвавшей страницы, поэтому «широкими»
+    становятся именно те страницы, которые это попросили (чат, граф),
+    а формы загрузки остаются в комфортной для чтения колонке.
+    """
+    st.html(
+        "<style>[data-testid='stMainBlockContainer'],"
+        "[data-testid='stBottomBlockContainer']"
+        f"{{max-width:{max_width} !important}}</style>"
+    )

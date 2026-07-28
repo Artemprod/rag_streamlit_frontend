@@ -1,6 +1,7 @@
 import hashlib
 from io import BytesIO
 
+import streamlit as st
 from pypdf import PdfReader
 from streamlit_pdf_viewer import pdf_viewer
 
@@ -40,14 +41,37 @@ def _annotations(
     return result
 
 
+# Стартовый объём рендера. Раньше в DOM уходили ВСЕ страницы разом — на
+# больших PDF модалка «замирала» на секунды. Теперь сперва только страницы
+# с найденными фрагментами (или первые страницы), остальное — по кнопке.
+_INITIAL_PAGES = 8
+
+
 def show_pdf(data: bytes, s3_key: str, documents: list) -> None:
     annotations = _annotations(documents, s3_key, data)
+    total = len(PdfReader(BytesIO(data)).pages)
+
+    marked = sorted({a["page"] for a in annotations})
+    initial = marked or list(range(1, min(_INITIAL_PAGES, total) + 1))
+    partial = total > len(initial)
+
+    show_all = False
+    if partial:
+        note = (
+            f"Показаны страницы с найденными фрагментами ({len(initial)} из {total})"
+            if marked
+            else f"Показаны первые {len(initial)} из {total} страниц"
+        )
+        show_all = st.toggle(f"📖 Весь документ — {note}", key=f"all_{s3_key}")
+
+    limited = partial and not show_all
     pdf_viewer(
         input=data,
-        key=f"pdf_{hashlib.md5(data).hexdigest()}",
+        key=f"pdf_{hashlib.md5(data).hexdigest()}_{show_all}",
         width="100%",
         height=1100,
         annotations=annotations,
+        **({"pages_to_render": initial} if limited else {}),
         scroll_to_page=annotations[0]["page"] if annotations else None,
         render_text=True,
         show_page_separator=True,
