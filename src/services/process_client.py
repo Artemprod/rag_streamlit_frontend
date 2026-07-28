@@ -9,7 +9,8 @@
   GET {process_url}/pipeline/status/{job_id}
     → 200    {job_id, dataset, status, total_files, files_loaded, files_failed,
               nodes_total, nodes_translated, nodes_persisted, nodes_graphed,
-              nodes_failed, progress: 0..1, error: str|None}
+              nodes_failed, progress: 0..1, error: str|None,
+              queue_position: int|None  # позиция в очереди, пока queued}
     → 404    задача не найдена
 
   GET {process_url}/pipeline/jobs/{job_id}/dead-letters
