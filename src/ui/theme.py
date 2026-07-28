@@ -87,14 +87,22 @@ _CSS = """
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: phrase 8s linear infinite, shimmer 1.6s linear infinite;
+    
+    /* Цикл 40s (из расчета 20 фраз * 2 сек). Если сделаешь 30 фраз — поменяй тут на 60s */
+    animation: phrase 40s linear infinite, shimmer 1.6s linear infinite;
+    
+    /* МАГИЯ ЗДЕСЬ: CSS сам умножает номер фразы из Питона на 2 секунды */
+    animation-delay: calc(var(--i) * 2s), 0s;
   }
-  .phrases span:nth-child(2) { animation-delay: 2s, 0s; }
-  .phrases span:nth-child(3) { animation-delay: 4s, 0s; }
-  .phrases span:nth-child(4) { animation-delay: 6s, 0s; }
+
+  /* ВСЕ .phrases span:nth-child(...) УДАЛЕНЫ */
+
   @keyframes phrase {
-    0% { opacity: 0; } 4% { opacity: .85; } 21% { opacity: .85; }
-    25% { opacity: 0; } 100% { opacity: 0; }
+    0% { opacity: 0; } 
+    1% { opacity: .85; } 
+    4% { opacity: .85; }
+    5% { opacity: 0; } 
+    100% { opacity: 0; }
   }
   @keyframes shimmer {
     from { background-position: 200% 0; } to { background-position: 0 0; }
