@@ -94,13 +94,20 @@ def _open_preview(s3_key: str, documents: list) -> None:
     _preview_dialog(s3_key, documents)
 
 
-def _handle_prompt(prompt: str) -> None:
-    """Кладёт вопрос в историю и запускает поиск в фоне (не блокируя UI)."""
-    label = _current_mode_label()
+def _handle_prompt(prompt: str, label: str | None = None) -> None:
+    """Кладёт вопрос в историю и запускает поиск в фоне (не блокируя UI).
+
+    label задаётся явно при переспросе в другом режиме; иначе берётся
+    из переключателя над полем ввода.
+    """
+    label = label or _current_mode_label()
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.pending = {
         "future": _EXECUTOR.submit(retrieval_client.ask, prompt, _MODES[label][0]),
         "mode": label,
+        # Вопрос храним в ответе: он нужен, чтобы прогнать его же в другом
+        # режиме одной кнопкой, не заставляя пользователя печатать заново.
+        "question": prompt,
         # Фразы выбираются один раз на запрос: индикатор рисуется вне
         # фрагмента-опросчика, и CSS-цикл не сбрасывается каждый тик.
         "phrases_html": "".join(
@@ -119,6 +126,7 @@ def _finish_pending(pending: dict) -> None:
             "content": answer,
             "sources": sources,
             "mode": pending["mode"],
+            "question": pending["question"],
         }
     except SearchNotReady as error:
         message = {"role": "assistant", "content": f"ℹ️ {error}", "sources": []}
@@ -182,6 +190,39 @@ def _feedback(message: dict, ns: str) -> None:
         logger.info(f"Оценка ответа: {verdict} | текст: {message['content'][:200]}")
 
 
+def _question_of(index: int, message: dict) -> str:
+    """Вопрос, на который отвечает сообщение. В диалогах, сохранённых до
+    появления переспроса, поля нет — берём предыдущую реплику пользователя."""
+    if message.get("question"):
+        return message["question"]
+    previous = st.session_state.messages[index - 1] if index else None
+    return previous["content"] if previous and previous["role"] == "user" else ""
+
+
+def _render_rerun(message: dict, index: int, ns: str) -> None:
+    """«Тот же вопрос в другом режиме» — по кнопке на каждый оставшийся режим.
+
+    Ответ добавляется в конец той же переписки: рядом видно, что говорит
+    обычный поиск, вердикт по регламенту и сверка на противоречия.
+    """
+    question = _question_of(index, message)
+    if message.get("mode") not in _MODES or not question:
+        return  # ошибки и служебные реплики переспрашивать нечем
+
+    others = [label for label in _MODES if label != message["mode"]]
+    st.caption("Тот же вопрос в другом режиме:")
+    for column, label in zip(st.columns(len(others)), others, strict=True):
+        if column.button(
+            label,
+            key=f"re_{ns}_{label}",
+            width="stretch",
+            disabled=bool(st.session_state.pending),
+            help=_MODES[label][3],
+        ):
+            _handle_prompt(question, label)
+            st.rerun()
+
+
 def _render_history() -> None:
     # Ключи виджетов включают id диалога: иначе оценка «fb_0» из одного
     # диалога проросла бы в первое сообщение другого после переключения.
@@ -201,6 +242,7 @@ def _render_history() -> None:
                     on_select=_open_preview,
                 )
                 _feedback(message, ns=f"{chat_ns}_{i}")
+                _render_rerun(message, i, ns=f"{chat_ns}_{i}")
 
 
 def render() -> None:
