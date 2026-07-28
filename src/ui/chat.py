@@ -7,6 +7,7 @@
 """
 
 import streamlit as st
+from loguru import logger
 
 from services import retrieval_client
 from services.retrieval_client import SearchError, SearchNotReady
@@ -85,11 +86,23 @@ def _render_welcome() -> None:
         )
         return
 
-    st.caption("С чего начать:")
-    for idx, example in enumerate(_EXAMPLES):
-        if st.button(f"💡 {example}", key=f"ex_{idx}", width="content"):
-            _handle_prompt(example)
-            st.rerun()
+    # Пилюли вместо ряда кнопок: компактнее и это нативный виджет выбора.
+    # Сбрасывать выбор не нужно: после первого вопроса welcome-экран
+    # больше не рендерится, и состояние виджета умирает вместе с ним.
+    example = st.pills("С чего начать:", _EXAMPLES, key="example_pick")
+    if example:
+        _handle_prompt(example)
+        st.rerun()
+
+
+def _feedback(message: dict, ns: str) -> None:
+    """Оценка ответа 👍/👎. Хранится в сообщении, пишется в лог сервиса —
+    по логам видно, какие вопросы получают плохие ответы."""
+    score = st.feedback("thumbs", key=f"fb_{ns}")
+    if score is not None and score != message.get("feedback"):
+        message["feedback"] = score
+        verdict = "полезен" if score else "бесполезен"
+        logger.info(f"Оценка ответа: {verdict} | текст: {message['content'][:200]}")
 
 
 def _render_history() -> None:
@@ -100,6 +113,7 @@ def _render_history() -> None:
                 render_sources(
                     message.get("sources", []), ns=str(i), on_select=_open_preview
                 )
+                _feedback(message, ns=str(i))
 
 
 def render() -> None:
