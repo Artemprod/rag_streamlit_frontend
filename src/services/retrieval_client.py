@@ -2,7 +2,7 @@
 
 Контракт: POST {retrieval_url}/query
   headers: X-API-Key
-  body:    {query: str}
+  body:    {query: str, mode: "default"|"compliance"|"contradictions"}
   → 200    {answer: str, sources: [{id, text, url, metadata}]}
 
 `metadata` каждого источника содержит s3_key, file_name и (для PDF) doc_items
@@ -50,10 +50,10 @@ def health() -> bool:
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,
 )
-def _post(query: str) -> dict:
+def _post(query: str, mode: str) -> dict:
     response = httpx.post(
         f"{config.retrieval_url}/query",
-        json={"query": query},
+        json={"query": query, "mode": mode},
         headers={"X-API-Key": config.retrieval_api_key},
         timeout=config.request_timeout,
     )
@@ -64,12 +64,12 @@ def _post(query: str) -> dict:
 # Кэшируем по тексту вопроса: повторный вопрос не гоняет LLM-агента заново,
 # а reruns (клик по источнику и т.п.) вообще не приводят к сетевым вызовам.
 @st.cache_data(show_spinner=False, max_entries=64, ttl=3600)
-def _ask_cached(query: str) -> tuple[str, list[dict]]:
-    data = _post(query)
+def _ask_cached(query: str, mode: str) -> tuple[str, list[dict]]:
+    data = _post(query, mode)
     return data.get("answer", ""), data.get("sources", [])
 
 
-def ask(question: str) -> tuple[str, list[dict]]:
+def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
     """Возвращает (ответ, документы-источники).
 
     Бросает SearchNotReady, если сервис не настроен, и SearchError при сбое.
@@ -78,7 +78,7 @@ def ask(question: str) -> tuple[str, list[dict]]:
         raise SearchNotReady("Сервис поиска ещё не подключён.")
 
     try:
-        return _ask_cached(question)
+        return _ask_cached(question, mode)
     except httpx.HTTPStatusError as error:
         raise SearchError(
             f"Сервис поиска вернул {error.response.status_code}."

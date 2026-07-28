@@ -20,6 +20,26 @@ _EXAMPLES = [
     "Сделай краткое резюме по загруженным файлам",
 ]
 
+# Режимы ответа. Ключ — подпись переключателя, значение — (mode API, подсказка
+# в поле ввода). Спор по регламенту и сверка противоречий — рабочие сценарии
+# комплаенса/безопасности, обычный режим — свободные вопросы.
+_MODES = {
+    "💬 Вопрос": ("default", "Спросите что-нибудь о документах…"),
+    "🛡️ По регламенту": (
+        "compliance",
+        "Опишите спорную ситуацию — отвечу вердиктом с цитатами пунктов…",
+    ),
+    "⚖️ Противоречия": (
+        "contradictions",
+        "Назовите тему или процесс — сверю, не расходятся ли документы…",
+    ),
+}
+
+
+def _current_mode() -> tuple[str, str]:
+    label = st.session_state.get("chat_mode") or next(iter(_MODES))
+    return _MODES.get(label, next(iter(_MODES.values())))
+
 
 @st.dialog("Просмотр документа", width="large")
 def _preview_dialog(s3_key: str, documents: list) -> None:
@@ -38,11 +58,12 @@ def _wait_for_answer(prompt: str):
     Вопрос иначе появился бы только после ререна, то есть через десяток секунд
     после нажатия Enter, и казалось бы, что ввод не сработал.
     """
+    mode, _ = _current_mode()
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
         st.html('<div class="typing"><span></span><span></span><span></span></div>')
-        return retrieval_client.ask(prompt)
+        return retrieval_client.ask(prompt, mode=mode)
 
 
 def _handle_prompt(prompt: str) -> None:
@@ -130,6 +151,16 @@ def render() -> None:
     else:
         _render_welcome()
 
-    if prompt := st.chat_input("Спросите что-нибудь о документах…"):
+    # Переключатель режима живёт над полем ввода и действует на следующий
+    # вопрос. По умолчанию — обычный вопрос; выбор хранится в сессии.
+    st.pills(
+        "Режим ответа",
+        list(_MODES),
+        default=next(iter(_MODES)),
+        key="chat_mode",
+        label_visibility="collapsed",
+    )
+    _, placeholder = _current_mode()
+    if prompt := st.chat_input(placeholder):
         _handle_prompt(prompt)
         st.rerun()
