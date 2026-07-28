@@ -1910,6 +1910,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pypdf" },
     { name = "s3fs" },
+    { name = "st-link-analysis" },
     { name = "streamlit" },
     { name = "streamlit-aggrid" },
     { name = "streamlit-authenticator" },
@@ -1933,6 +1934,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pypdf", specifier = ">=6.14.2" },
     { name = "s3fs", specifier = ">=2026.6.0" },
+    { name = "st-link-analysis", specifier = ">=0.4.0" },
     { name = "streamlit", specifier = ">=1.58.0" },
     { name = "streamlit-aggrid", specifier = ">=1.2.1.post2" },
     { name = "streamlit-authenticator", specifier = ">=0.4.2" },
@@ -2150,6 +2152,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1f/ea/49c993d6dfdd7338c9b1000a0f36817ed7ec84577ae2e52f890d1a4ff909/smmap-5.0.3.tar.gz", hash = "sha256:4d9debb8b99007ae47165abc08670bd74cb74b5227dda7f643eccc4e9eb5642c", size = 22506, upload-time = "2026-03-09T03:43:26.1Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/d4/59e74daffcb57a07668852eeeb6035af9f32cbfd7a1d2511f17d2fe6a738/smmap-5.0.3-py3-none-any.whl", hash = "sha256:c106e05d5a61449cf6ba9a1e650227ecfb141590d2a98412103ff35d89fc7b2f", size = 24390, upload-time = "2026-03-09T03:43:24.361Z" },
+]
+
+[[package]]
+name = "st-link-analysis"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/b1/dc95749ce76bfa4fd83492af682a33b4e83139e8e4f07ce1c144a13e4b8b/st_link_analysis-0.4.0.tar.gz", hash = "sha256:e831aba88e0e4ce7fa90e51e199ff7d563690c260ab18c8c0d488fc942274556", size = 459058, upload-time = "2025-06-26T10:51:46.092Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/4f/d6e3afe01775e554f156bde6c5b96796e232d1e32de3fef284eb2bc76dc7/st_link_analysis-0.4.0-py3-none-any.whl", hash = "sha256:7c97ee255a98a9f59fd5814879c9f0e698718dc4ba8dd879b3537b8bcc61b94e", size = 480157, upload-time = "2025-06-26T10:51:43.927Z" },
 ]
 
 [[package]]

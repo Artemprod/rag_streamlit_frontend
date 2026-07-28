@@ -7,6 +7,7 @@
 """
 
 import streamlit as st
+from loguru import logger
 
 from services import retrieval_client
 from services.retrieval_client import SearchError, SearchNotReady
@@ -18,6 +19,26 @@ _EXAMPLES = [
     "Найди упоминания сроков и дат",
     "Сделай краткое резюме по загруженным файлам",
 ]
+
+# Режимы ответа. Ключ — подпись переключателя, значение — (mode API, подсказка
+# в поле ввода). Спор по регламенту и сверка противоречий — рабочие сценарии
+# комплаенса/безопасности, обычный режим — свободные вопросы.
+_MODES = {
+    "💬 Вопрос": ("default", "Спросите что-нибудь о документах…"),
+    "🛡️ По регламенту": (
+        "compliance",
+        "Опишите спорную ситуацию — отвечу вердиктом с цитатами пунктов…",
+    ),
+    "⚖️ Противоречия": (
+        "contradictions",
+        "Назовите тему или процесс — сверю, не расходятся ли документы…",
+    ),
+}
+
+
+def _current_mode() -> tuple[str, str]:
+    label = st.session_state.get("chat_mode") or next(iter(_MODES))
+    return _MODES.get(label, next(iter(_MODES.values())))
 
 
 @st.dialog("Просмотр документа", width="large")
@@ -37,11 +58,12 @@ def _wait_for_answer(prompt: str):
     Вопрос иначе появился бы только после ререна, то есть через десяток секунд
     после нажатия Enter, и казалось бы, что ввод не сработал.
     """
+    mode, _ = _current_mode()
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
         st.html('<div class="typing"><span></span><span></span><span></span></div>')
-        return retrieval_client.ask(prompt)
+        return retrieval_client.ask(prompt, mode=mode)
 
 
 def _handle_prompt(prompt: str) -> None:
@@ -85,11 +107,23 @@ def _render_welcome() -> None:
         )
         return
 
-    st.caption("С чего начать:")
-    for idx, example in enumerate(_EXAMPLES):
-        if st.button(f"💡 {example}", key=f"ex_{idx}", width="content"):
-            _handle_prompt(example)
-            st.rerun()
+    # Пилюли вместо ряда кнопок: компактнее и это нативный виджет выбора.
+    # Сбрасывать выбор не нужно: после первого вопроса welcome-экран
+    # больше не рендерится, и состояние виджета умирает вместе с ним.
+    example = st.pills("С чего начать:", _EXAMPLES, key="example_pick")
+    if example:
+        _handle_prompt(example)
+        st.rerun()
+
+
+def _feedback(message: dict, ns: str) -> None:
+    """Оценка ответа 👍/👎. Хранится в сообщении, пишется в лог сервиса —
+    по логам видно, какие вопросы получают плохие ответы."""
+    score = st.feedback("thumbs", key=f"fb_{ns}")
+    if score is not None and score != message.get("feedback"):
+        message["feedback"] = score
+        verdict = "полезен" if score else "бесполезен"
+        logger.info(f"Оценка ответа: {verdict} | текст: {message['content'][:200]}")
 
 
 def _render_history() -> None:
@@ -100,6 +134,7 @@ def _render_history() -> None:
                 render_sources(
                     message.get("sources", []), ns=str(i), on_select=_open_preview
                 )
+                _feedback(message, ns=str(i))
 
 
 def render() -> None:
@@ -116,6 +151,16 @@ def render() -> None:
     else:
         _render_welcome()
 
-    if prompt := st.chat_input("Спросите что-нибудь о документах…"):
+    # Переключатель режима живёт над полем ввода и действует на следующий
+    # вопрос. По умолчанию — обычный вопрос; выбор хранится в сессии.
+    st.pills(
+        "Режим ответа",
+        list(_MODES),
+        default=next(iter(_MODES)),
+        key="chat_mode",
+        label_visibility="collapsed",
+    )
+    _, placeholder = _current_mode()
+    if prompt := st.chat_input(placeholder):
         _handle_prompt(prompt)
         st.rerun()

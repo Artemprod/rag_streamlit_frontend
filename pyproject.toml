@@ -9,6 +9,7 @@ dependencies = [
     "streamlit-authenticator>=0.4.2",   # логин + cookie-сессия (готовый компонент)
     "streamlit-pdf-viewer>=0.0.29",     # просмотр PDF с аннотациями
     "streamlit-aggrid>=1.2.1.post2",    # таблицы CSV/Excel
+    "st-link-analysis>=0.4.0",          # граф знаний (Cytoscape, JS в бандле)
     # ── Документы ────────────────────────────────────────────
     "pypdf>=6.14.2",                    # размеры страниц для bbox
     "mammoth>=1.12.0",                  # DOCX → HTML

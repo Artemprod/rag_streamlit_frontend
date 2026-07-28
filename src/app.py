@@ -28,7 +28,7 @@ st.set_page_config(
 
 import auth
 from state import init_state
-from ui import chat, sidebar, theme, upload
+from ui import chat, graph, sidebar, theme, upload
 
 theme.inject_base_styles()
 
@@ -44,6 +44,7 @@ pages = st.navigation(
         # иначе st.navigation выведет одинаковый путь и упадёт.
         st.Page(chat.render, title="Чат", icon="💬", url_path="chat", default=True),
         st.Page(upload.render, title="Загрузка", icon="📤", url_path="upload"),
+        st.Page(graph.render, title="Граф знаний", icon="🕸️", url_path="graph"),
     ]
 )
 
