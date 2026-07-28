@@ -51,9 +51,14 @@ _warned_insecure: list = []
 
 
 def using_insecure_defaults() -> bool:
-    """True, если пароль или секрет cookie остались дефолтными (dev-режим)."""
+    """True, если пароль или секрет cookie остались дефолтными (dev-режим).
+
+    Пустая строка тоже небезопасна: `AUTH_COOKIE_KEY=` в .env даёт
+    предсказуемую подпись cookie, и это надо заметить, а не молча принять.
+    """
     return (
-        config.auth_cookie_key in _INSECURE_DEFAULTS
+        not config.auth_cookie_key
+        or config.auth_cookie_key in _INSECURE_DEFAULTS
         or config.admin_password in _INSECURE_DEFAULTS
     )
 
