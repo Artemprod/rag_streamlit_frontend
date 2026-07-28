@@ -221,6 +221,7 @@ def _apply_snapshot(job: dict, snapshot: dict) -> None:
     job["status"] = snapshot.get("status", job["status"])
     job["progress"] = snapshot.get("progress", job.get("progress") or 0.0)
     job["error"] = snapshot.get("error") or job.get("error")
+    job["queue_position"] = snapshot.get("queue_position")
     job["stats"] = {name: snapshot.get(name, 0) for name in _COUNTERS}
 
 
@@ -268,11 +269,16 @@ def _render_active_jobs() -> None:
             _apply_snapshot(job, snapshot)
 
         icon, label = _STATUS_VIEW.get(job["status"], ("•", job["status"]))
+        # Для стоящей в очереди задачи позиция информативнее пустого прогресса:
+        # сервис обрабатывает задачи по одной, и «№3 в очереди» честно
+        # объясняет, почему проценты ещё не двигаются.
+        if job["status"] == "queued" and job.get("queue_position"):
+            label = f"{label} (№{job['queue_position']})"
         st.progress(
             job.get("progress") or 0.0,
             text=f"{icon} {job['created_at']} · {label} · {job['files']} файл(ов)",
         )
-        if job.get("stats"):
+        if job.get("stats") and job["status"] != "queued":
             st.caption(_stats_line(job["stats"]))
 
     if any(process_client.is_terminal(job["status"]) for job in active):
