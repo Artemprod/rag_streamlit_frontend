@@ -11,9 +11,10 @@
 
 import httpx
 import streamlit as st
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import config
+from services.http import is_transient
 
 # Пробник живости — короткий запрос. Общий request_timeout (минуты) сюда не
 # годится: сайдбар не должен ждать минуту, чтобы показать статус.
@@ -44,6 +45,7 @@ def health() -> bool:
 
 
 @retry(
+    retry=retry_if_exception(is_transient),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,

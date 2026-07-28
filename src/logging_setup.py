@@ -1,8 +1,7 @@
-"""Единая настройка структурного логирования фронта.
+"""Логирование фронта: один loguru на процесс, дефолтный формат.
 
-Тот же формат, что у сервисов обработки и поиска: одна JSON-строка на запись,
-чтобы логи всех трёх сервисов читались одним сборщиком. Streamlit и библиотеки
-пишут через stdlib logging, поэтому перехватываем и их.
+Streamlit и библиотеки пишут через stdlib logging — перехватываем их, чтобы
+весь лог шёл одним форматом.
 """
 
 import inspect
@@ -13,7 +12,20 @@ import sys
 from loguru import logger
 
 _LEVEL = os.getenv("LOG_LEVEL", "INFO")
-_SERIALIZE = os.getenv("LOG_JSON", "true").strip().lower() not in ("0", "false", "no")
+
+# Болтливые чужие логгеры: оставляем только WARNING и выше. httpx здесь
+# потому, что health-пробы и поллинг статуса идут раз в 1–2 секунды и
+# забивали лог целиком.
+_QUIET = (
+    "httpx",
+    "httpcore",
+    "botocore",
+    "s3fs",
+    "fsspec",
+    "watchdog",
+    "tornado",
+    "PIL",
+)
 
 
 class _InterceptHandler(logging.Handler):
@@ -32,12 +44,9 @@ class _InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        # bind(logger_name): без него в записи остаётся только модуль вызова,
-        # и в логе не видно, кто её произвёл — uvicorn.access, sqlalchemy.engine
-        # или что-то ещё. Для разбора инцидентов это ключевое поле.
-        logger.bind(logger_name=record.name).opt(
-            depth=depth, exception=record.exc_info
-        ).log(level, record.getMessage())
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 def setup_logging() -> None:
@@ -46,10 +55,11 @@ def setup_logging() -> None:
     logger.add(
         sys.stderr,
         level=_LEVEL,
-        serialize=_SERIALIZE,
         backtrace=True,
         # diagnose=False обязателен: иначе loguru печатает значения переменных
         # из кадров стека, а там ходят пароль админа и секрет cookie.
         diagnose=False,
     )
     logging.basicConfig(handlers=[_InterceptHandler()], level=logging.NOTSET, force=True)
+    for name in _QUIET:
+        logging.getLogger(name).setLevel(logging.WARNING)

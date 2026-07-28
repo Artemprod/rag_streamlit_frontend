@@ -21,9 +21,10 @@
 """
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import config
+from services.http import is_transient
 
 # Статусы, после которых задача больше не меняется — поллинг прекращаем.
 # Зеркалит JobStatus сервиса обработки; дублирование этого контракта дешевле
@@ -48,13 +49,17 @@ def _headers() -> dict[str, str]:
 
 
 @retry(
+    retry=retry_if_exception(is_transient),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,
 )
 def _post(payload: dict) -> dict:
     """Постановку ретраим: терять задачу нельзя. Сервис дедуплицирует повторы
-    по содержимому запроса, поэтому ретрай не создаёт задачу-дубль."""
+    по содержимому запроса, поэтому ретрай не создаёт задачу-дубль.
+
+    Только транзиентные сбои: 401 или 422 повтором не исправить, а пользователь
+    ждал бы ошибку лишние шесть секунд."""
     response = httpx.post(
         f"{config.process_url}/pipeline/process",
         json=payload,
