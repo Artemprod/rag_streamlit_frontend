@@ -22,8 +22,13 @@ from tenacity import (
 
 from config import config
 
-# Небольшой пул: заливки идут в фоне, UI остаётся отзывчивым.
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="s3-upload")
+# Один поток: заливки идут в фоне (UI остаётся отзывчивым), но строго по
+# очереди. Параллельные PUT в один бакет Selectel регулярно отвечают
+# 409 OperationAborted — причём на разных ключах, то есть дело не в дубликатах,
+# а в конкурентных операциях над бакетом. Последовательная заливка убирает
+# причину, а не борется с симптомом ретраями; скорость упирается в сеть,
+# а не в число потоков.
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="s3-upload")
 
 # Временные отказы хранилища. s3fs переводит коды S3 в OSError с errno:
 #   EBUSY  — OperationAborted (409, «conflicting conditional operation»),
@@ -67,8 +72,8 @@ def _safe_key(name: str) -> str:
 
 @retry(
     retry=retry_if_exception(_is_transient),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(8),
+    wait=wait_exponential(multiplier=1, min=1, max=30),
     reraise=True,
 )
 def _write(key: str, data: bytes) -> None:

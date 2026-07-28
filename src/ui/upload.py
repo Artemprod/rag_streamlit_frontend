@@ -1,9 +1,8 @@
 """Страница «Загрузка» — заливка документов и постановка на обработку.
 
-Поток: выбор файлов → фоновая заливка в S3 → постановка в обработку по мере
-готовности (раз в секунду всё, что успело залиться, уходит отдельной задачей —
-первые документы обрабатываются, пока остальные ещё грузятся) → поллинг
-прогресса задач до терминального статуса.
+Поток: выбор файлов → фоновая заливка в S3 → постановка в обработку пачками по
+мере готовности (первые документы обрабатываются, пока остальные ещё грузятся)
+→ поллинг прогресса задач до терминального статуса.
 
 Прогресс показываем честно на всех стадиях: сервис обработки отдаёт снимок
 счётчиков (файлы загружены/упали, ноды переведены/записаны/попали в граф),
@@ -45,6 +44,12 @@ _COUNTERS = (
 # Сколько имён файлов показывать, прежде чем свернуть в «…и ещё N».
 _MAX_NAMES_SHOWN = 20
 _POLL_INTERVAL = "2s"
+
+# Сколько залившихся файлов копим, прежде чем ставить их одной задачей.
+# Без накопления каждый тик отправлял бы то, что успело залиться за секунду
+# (при последовательной заливке — один файл), и сотня документов превращалась
+# бы в сотню задач в очереди.
+_DISPATCH_BATCH = 10
 
 # Пояснения на языке пользователя: что произойдёт с файлами и зачем нужны поля.
 # Держим их здесь, а не в вызовах виджетов, чтобы текст было легко править.
@@ -205,10 +210,10 @@ def _dispatch(ready: list, dataset: str, domain_context: str | None) -> None:
 
 @st.fragment(run_every="1s")
 def _render_upload_progress() -> None:
-    """Каждую секунду: залившиеся файлы — сразу в обработку, остальные ждём.
+    """Каждую секунду: залившиеся файлы копим и ставим пачками по десять.
 
-    Первые документы начинают обрабатываться, пока хвост ещё грузится в S3;
-    большая пачка превращается в несколько задач в очереди сервиса.
+    Первые документы начинают обрабатываться, пока хвост ещё грузится в S3,
+    но задач в очереди получается в десять раз меньше, чем файлов.
     Перерисовывается только этот фрагмент, остальная страница не трогается.
     """
     uploads = st.session_state.upload_futures
@@ -216,20 +221,25 @@ def _render_upload_progress() -> None:
         return
 
     meta = st.session_state.upload_meta or {}
-    ready = [(name, f) for name, f in uploads if f.done()]
+    ready = st.session_state.upload_ready + [(n, f) for n, f in uploads if f.done()]
     pending = [(name, f) for name, f in uploads if not f.done()]
     st.session_state.upload_futures = pending or None
 
-    if ready:
+    # Хвост отправляем не дожидаясь полной пачки — иначе последние файлы
+    # застряли бы в буфере навсегда.
+    dispatched = bool(ready) and (len(ready) >= _DISPATCH_BATCH or not pending)
+    if dispatched:
         _dispatch(ready, meta.get("dataset", "yello"), meta.get("domain_context"))
+        ready = []
+    st.session_state.upload_ready = ready
 
     if pending:
         total = meta.get("total", len(pending)) or 1
         st.progress(
             1 - len(pending) / total,
-            text=f"Загрузка в S3: {total - len(pending)}/{total}",
+            text=f"Загрузка в хранилище: {total - len(pending)}/{total}",
         )
-        if ready:
+        if dispatched:
             # Часть уже ушла в обработку — показываем её в разделе «В работе».
             st.rerun(scope="app")
     else:
@@ -242,7 +252,6 @@ def _apply_snapshot(job: dict, snapshot: dict) -> None:
     job["status"] = snapshot.get("status", job["status"])
     job["progress"] = snapshot.get("progress", job.get("progress") or 0.0)
     job["error"] = snapshot.get("error") or job.get("error")
-    job["queue_position"] = snapshot.get("queue_position")
     job["stats"] = {name: snapshot.get(name, 0) for name in _COUNTERS}
 
 
@@ -270,9 +279,24 @@ def _active_jobs() -> list[dict]:
     ]
 
 
+def _total_stats(jobs: list[dict]) -> dict | None:
+    """Счётчики стадий, просуммированные по задачам (None — снимков ещё нет)."""
+    snapshots = [job["stats"] for job in jobs if job.get("stats")]
+    if not snapshots:
+        return None
+    return {
+        name: sum(snapshot.get(name, 0) for snapshot in snapshots) for name in _COUNTERS
+    }
+
+
 @st.fragment(run_every=_POLL_INTERVAL)
 def _render_active_jobs() -> None:
-    """Поллит незавершённые задачи и рисует их прогресс.
+    """Поллит незавершённые задачи и рисует ОДИН общий прогресс на всё.
+
+    Сто документов — это десяток задач в очереди сервиса, но для пользователя
+    это одна операция: важно, сколько всего файлов в работе и сколько ещё
+    ждёт. Поэтому вместо полосы на задачу — одна полоса и одна строка со
+    сводкой по стадиям.
 
     Неудачный опрос не считается ошибкой задачи: сохраняем последнее известное
     состояние и пробуем снова на следующем тике. Когда задача дошла до
@@ -283,24 +307,30 @@ def _render_active_jobs() -> None:
     if not active:
         return
 
-    st.subheader("В работе")
     for job in active:
         snapshot = process_client.status(job["job_id"])
         if snapshot is not None:
             _apply_snapshot(job, snapshot)
 
-        icon, label = _STATUS_VIEW.get(job["status"], ("•", job["status"]))
-        # Для стоящей в очереди задачи позиция информативнее пустого прогресса:
-        # сервис обрабатывает задачи по одной, и «№3 в очереди» честно
-        # объясняет, почему проценты ещё не двигаются.
-        if job["status"] == "queued" and job.get("queue_position"):
-            label = f"{label} (№{job['queue_position']})"
-        st.progress(
-            job.get("progress") or 0.0,
-            text=f"{icon} {job['created_at']} · {label} · {job['files']} файл(ов)",
-        )
-        if job.get("stats") and job["status"] != "queued":
-            st.caption(_stats_line(job["stats"]))
+    running = [job for job in active if job["status"] == "running"]
+    queued = [job for job in active if job["status"] == "queued"]
+    files = sum(job["files"] for job in active)
+    # Прогресс взвешиваем по числу файлов: задача на 10 документов не должна
+    # весить столько же, сколько задача на один.
+    done = sum((job.get("progress") or 0.0) * job["files"] for job in active)
+
+    parts = []
+    if running:
+        parts.append(f"⚙️ обрабатывается {sum(job['files'] for job in running)}")
+    if queued:
+        parts.append(f"📨 в очереди +{sum(job['files'] for job in queued)}")
+    parts.append(f"всего {files} документов")
+
+    st.subheader("В работе")
+    st.progress(done / files if files else 0.0, text=" · ".join(parts))
+    stats = _total_stats(running)
+    if stats:
+        st.caption(_stats_line(stats))
 
     if any(process_client.is_terminal(job["status"]) for job in active):
         st.rerun(scope="app")
