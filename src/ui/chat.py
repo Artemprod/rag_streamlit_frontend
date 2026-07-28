@@ -143,7 +143,9 @@ def _open_preview(s3_key: str, documents: list) -> None:
 
 def _phrases_html() -> str:
     """Разметка сменяющихся фраз: случайные фразы со сдвигом по времени."""
-    chosen = random.sample(_SEARCH_PHRASES, min(_PHRASES_PER_REQUEST, len(_SEARCH_PHRASES)))
+    chosen = random.sample(
+        _SEARCH_PHRASES, min(_PHRASES_PER_REQUEST, len(_SEARCH_PHRASES))
+    )
     return "".join(
         f'<span style="animation-delay:{index * _PHRASE_SECONDS:.1f}s,0s">'
         f"{escape(text)}</span>"
