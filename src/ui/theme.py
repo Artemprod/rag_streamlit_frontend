@@ -75,25 +75,40 @@ _CSS = """
     40%           { transform: translateY(-0.28rem); opacity: 0.9;  }
   }
 
-  /* Сменные фразы под точками: 4 span'а по очереди, цикл 11.2с. */
-  .phrases { position: relative; height: 1.5em; margin-top: .35rem; opacity: .75; }
+  /* Сменные фразы под точками: 4 span'а по очереди (цикл 8с) с лёгким
+     «переливанием» — градиент бежит по тексту, видно, что процесс идёт. */
+  .phrases { position: relative; height: 1.5em; margin-top: .35rem; }
   .phrases span {
     position: absolute; left: 0; white-space: nowrap;
-    opacity: 0; animation: phrase 11.2s linear infinite;
+    opacity: 0;
+    background: linear-gradient(90deg,
+      currentColor 30%, rgba(139, 139, 245, 1) 50%, currentColor 70%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: phrase 8s linear infinite, shimmer 1.6s linear infinite;
   }
-  .phrases span:nth-child(2) { animation-delay: 2.8s; }
-  .phrases span:nth-child(3) { animation-delay: 5.6s; }
-  .phrases span:nth-child(4) { animation-delay: 8.4s; }
+  .phrases span:nth-child(2) { animation-delay: 2s, 0s; }
+  .phrases span:nth-child(3) { animation-delay: 4s, 0s; }
+  .phrases span:nth-child(4) { animation-delay: 6s, 0s; }
   @keyframes phrase {
-    0% { opacity: 0; } 3% { opacity: 1; } 22% { opacity: 1; }
+    0% { opacity: 0; } 4% { opacity: .85; } 21% { opacity: .85; }
     25% { opacity: 0; } 100% { opacity: 0; }
   }
+  @keyframes shimmer {
+    from { background-position: 200% 0; } to { background-position: 0 0; }
+  }
 
-  /* Уважаем системную настройку «меньше движения». */
+  /* «Меньше движения»: убираем только прыжки (transform), мягкие смены
+     прозрачности оставляем — иначе индикатор выглядит зависшим. */
   @media (prefers-reduced-motion: reduce) {
-    .typing span { animation: none; opacity: 0.5; }
-    .phrases span { animation: none; }
-    .phrases span:first-child { opacity: 1; }
+    .typing span { animation: typing-fade 1.2s ease-in-out infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .typing span:nth-child(3) { animation-delay: 0.30s; }
+  }
+  @keyframes typing-fade {
+    0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 0.9; }
   }
 
   /* ── Адаптивность: планшеты и телефоны ──────────────────────────────

@@ -49,6 +49,13 @@ _INITIAL_PAGES = 8
 
 def show_pdf(data: bytes, s3_key: str, documents: list) -> None:
     annotations = _annotations(documents, s3_key, data)
+
+    # Без подсветки тяжёлый компонент не нужен: нативный st.pdf открывается
+    # заметно быстрее (стриминг вместо рендера всех страниц в DOM).
+    if not annotations and hasattr(st, "pdf"):
+        st.pdf(data, height=1100)
+        return
+
     total = len(PdfReader(BytesIO(data)).pages)
 
     marked = sorted({a["page"] for a in annotations})
@@ -72,7 +79,9 @@ def show_pdf(data: bytes, s3_key: str, documents: list) -> None:
         height=1100,
         annotations=annotations,
         **({"pages_to_render": initial} if limited else {}),
-        scroll_to_page=annotations[0]["page"] if annotations else None,
-        render_text=True,
+        scroll_to_page=annotations[0]["page"],
+        # Текстовый слой не нужен: подсветка — рамки по координатам, а
+        # text-layer заставляет pdf.js рендерить каждую страницу дважды.
+        render_text=False,
         show_page_separator=True,
     )

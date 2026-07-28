@@ -11,7 +11,7 @@ import streamlit as st
 
 import auth
 from config import config
-from services import process_client, retrieval_client
+from services import chats, process_client, retrieval_client
 
 # SVG-вордмарк как data-URI: без бинарного ассета, цвета читаемы и на светлой,
 # и на тёмной теме (иконка — градиент, «Документы» — нейтральный серый).
@@ -77,3 +77,27 @@ def render_help() -> None:
             "3. **Источники** — кликните файл под ответом, чтобы открыть его "
             "с подсветкой найденного фрагмента."
         )
+
+
+def render_chat_history(chat_page) -> None:
+    """Диалоги в сайдбаре: «Новый чат» + список прошлых. Клик по диалогу
+    подгружает переписку и переводит на страницу чата с любой вкладки."""
+    if st.button("✚ Новый чат", width="stretch"):
+        st.session_state.messages = []
+        st.session_state.chat_id = None
+        st.switch_page(chat_page)
+
+    saved = chats.summaries()
+    if not saved:
+        return
+    with st.expander("🗂️ История диалогов"):
+        for chat in saved:
+            if st.button(
+                chat["title"],
+                key=f"hist_{chat['id']}",
+                help=f"Обновлён {chat['updated_at']}",
+                width="stretch",
+            ):
+                st.session_state.messages = chats.get(chat["id"])
+                st.session_state.chat_id = chat["id"]
+                st.switch_page(chat_page)
