@@ -85,3 +85,19 @@ def ask(question: str) -> tuple[str, list[dict]]:
         ) from error
     except httpx.HTTPError as error:
         raise SearchError(f"Сервис поиска недоступен: {error}") from error
+
+
+def knowledge_graph() -> dict:
+    """Подграф знаний: {nodes, edges}. Бросает SearchError при сбое."""
+    if not is_configured():
+        raise SearchNotReady("Сервис поиска не подключён")
+    try:
+        response = httpx.get(
+            f"{config.retrieval_url}/graph",
+            headers={"X-API-Key": config.retrieval_api_key},
+            timeout=30,  # Neo4j-обход + обогащение из Postgres, дольше поллинга
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as error:
+        raise SearchError(f"Не удалось получить граф знаний: {error}") from error
