@@ -5,6 +5,7 @@
 """
 
 import errno
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import PurePosixPath
@@ -76,12 +77,8 @@ def _write(key: str, data: bytes) -> None:
         dst.write(data)
 
 
-def _put(name: str, data: bytes) -> str:
-    """Выполняется в фоновом потоке — никаких st.* внутри.
-
-    Возвращает durable s3_key вида 'bucket/dir/file.pdf'.
-    """
-    key = f"{config.s3_bucket}/{_safe_key(name)}"
+def _put(key: str, data: bytes) -> str:
+    """Выполняется в фоновом потоке — никаких st.* внутри."""
     try:
         _write(key, data)
     except Exception as error:
@@ -90,13 +87,47 @@ def _put(name: str, data: bytes) -> str:
     return key
 
 
-def upload_async(uploaded_files: list) -> list[Future]:
+# Заливки, идущие прямо сейчас, по ключу. Два конкурентных PUT одного ключа
+# (файл выбран и в «файлах», и в «папке»; повторная отправка при живой старой
+# заливке после обновления страницы) — это 409 OperationAborted от хранилища
+# на весь срок первой заливки, ретраи не спасают. Вместо второго PUT отдаём
+# уже идущий future.
+_in_flight: dict[str, Future] = {}
+_in_flight_lock = threading.Lock()
+
+
+def _submit(key: str, data: bytes) -> Future:
+    with _in_flight_lock:
+        future = _in_flight.get(key)
+        if future is not None and not future.done():
+            return future
+        future = _executor.submit(_put, key, data)
+        _in_flight[key] = future
+        future.add_done_callback(lambda f, key=key: _forget(key, f))
+        return future
+
+
+def _forget(key: str, future: Future) -> None:
+    with _in_flight_lock:
+        if _in_flight.get(key) is future:
+            del _in_flight[key]
+
+
+def upload_async(uploaded_files: list) -> list[tuple[str, Future]]:
     """Байты читаем сразу (виджет живёт только до rerun), заливаем в фоне.
 
-    Возвращает futures со s3-ключами.
+    Возвращает пары (имя файла, future c s3-ключом) — по одной на уникальный
+    ключ: дубликаты выбора схлопываются в одну заливку.
     """
-    payload = [(file.name, file.getvalue()) for file in uploaded_files]
-    return [_executor.submit(_put, name, data) for name, data in payload]
+    pairs = []
+    seen: set[str] = set()
+    for file in uploaded_files:
+        key = f"{config.s3_bucket}/{_safe_key(file.name)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append((file.name, _submit(key, file.getvalue())))
+    return pairs
 
 
 @st.cache_data(show_spinner="Загружаю файл…", max_entries=32)

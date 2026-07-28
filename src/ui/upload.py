@@ -1,8 +1,9 @@
 """Страница «Загрузка» — заливка документов и постановка на обработку.
 
-Поток: выбор файлов → фоновая заливка в S3 (прогресс в реальном времени) →
-постановка в обработку (сервис отдаёт job_id) → поллинг прогресса задачи до
-терминального статуса.
+Поток: выбор файлов → фоновая заливка в S3 → постановка в обработку по мере
+готовности (раз в секунду всё, что успело залиться, уходит отдельной задачей —
+первые документы обрабатываются, пока остальные ещё грузятся) → поллинг
+прогресса задач до терминального статуса.
 
 Прогресс показываем честно на всех стадиях: сервис обработки отдаёт снимок
 счётчиков (файлы загружены/упали, ноды переведены/записаны/попали в граф),
@@ -153,67 +154,87 @@ def _render_uploader() -> None:
         type="primary",
         disabled=busy or not uploaded,
     ):
-        st.session_state.upload_futures = s3_service.upload_async(uploaded)
+        uploads = s3_service.upload_async(uploaded)
+        st.session_state.upload_futures = uploads
         st.session_state.upload_meta = {
             "dataset": dataset,
             "domain_context": domain_context,
-            "file_names": [f.name for f in uploaded],
+            "total": len(uploads),
         }
         st.session_state.uploader_key += 1
         st.rerun()
 
 
-@st.fragment(run_every="1s")
-def _render_upload_progress() -> None:
-    """Поллит фоновую заливку в S3; когда всё залито — ставит задачу в обработку.
+def _dispatch(ready: list, dataset: str, domain_context: str | None) -> None:
+    """Отправляет группу залившихся файлов в обработку одной задачей.
 
-    Перерисовывается только этот фрагмент, остальная страница не трогается.
+    Упавшие заливки фиксируются отдельной записью-ошибкой; сбой постановки
+    не трогает остальные группы — их отправят следующие тики.
     """
-    futures = st.session_state.upload_futures
-    if not futures:
-        return
+    ok = [(name, f.result()) for name, f in ready if f.exception() is None]
+    lost = [(name, f.exception()) for name, f in ready if f.exception() is not None]
 
-    done = sum(future.done() for future in futures)
-    total = len(futures)
-    st.progress(done / total, text=f"Загрузка в S3: {done}/{total}")
-
-    if done < total:
-        return
-
-    # Все объекты в S3 — снимаем задачу заливки и ставим на обработку.
-    meta = st.session_state.upload_meta or {}
-    dataset = meta.get("dataset", "yello")
-    st.session_state.upload_futures = None
-    st.session_state.upload_meta = None
-
-    try:
-        s3_keys = [future.result() for future in futures]
-        result = process_client.process(s3_keys, dataset, meta.get("domain_context"))
+    if lost:
         _record_job(
             dataset=dataset,
-            file_names=meta.get("file_names", s3_keys),
+            file_names=[name for name, _ in lost],
+            status="upload_failed",
+            error=str(lost[0][1]),
+        )
+        st.toast(f"Не залилось файлов: {len(lost)}", icon="❌")
+    if not ok:
+        return
+
+    try:
+        result = process_client.process([key for _, key in ok], dataset, domain_context)
+        _record_job(
+            dataset=dataset,
+            file_names=[name for name, _ in ok],
             status="queued",
             job_id=result.get("job_id"),
         )
-        # Полный ререн, а не только фрагмента: задача должна появиться в разделе
-        # «В работе», который живёт вне этого фрагмента.
-        st.rerun(scope="app")
     except ProcessError as error:
         _record_job(
             dataset=dataset,
-            file_names=meta.get("file_names", []),
+            file_names=[name for name, _ in ok],
             status="upload_failed",
             error=str(error),
         )
         st.toast(f"Не удалось поставить на обработку: {error}", icon="❌")
-    except Exception as error:
-        _record_job(
-            dataset=dataset,
-            file_names=meta.get("file_names", []),
-            status="upload_failed",
-            error=str(error),
+
+
+@st.fragment(run_every="1s")
+def _render_upload_progress() -> None:
+    """Каждую секунду: залившиеся файлы — сразу в обработку, остальные ждём.
+
+    Первые документы начинают обрабатываться, пока хвост ещё грузится в S3;
+    большая пачка превращается в несколько задач в очереди сервиса.
+    Перерисовывается только этот фрагмент, остальная страница не трогается.
+    """
+    uploads = st.session_state.upload_futures
+    if not uploads:
+        return
+
+    meta = st.session_state.upload_meta or {}
+    ready = [(name, f) for name, f in uploads if f.done()]
+    pending = [(name, f) for name, f in uploads if not f.done()]
+    st.session_state.upload_futures = pending or None
+
+    if ready:
+        _dispatch(ready, meta.get("dataset", "yello"), meta.get("domain_context"))
+
+    if pending:
+        total = meta.get("total", len(pending)) or 1
+        st.progress(
+            1 - len(pending) / total,
+            text=f"Загрузка в S3: {total - len(pending)}/{total}",
         )
-        st.toast(f"Ошибка заливки: {error}", icon="❌")
+        if ready:
+            # Часть уже ушла в обработку — показываем её в разделе «В работе».
+            st.rerun(scope="app")
+    else:
+        st.session_state.upload_meta = None
+        st.rerun(scope="app")
 
 
 def _apply_snapshot(job: dict, snapshot: dict) -> None:
