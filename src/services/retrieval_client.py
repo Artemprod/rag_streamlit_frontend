@@ -10,7 +10,6 @@
 """
 
 import httpx
-import streamlit as st
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import config
@@ -61,24 +60,19 @@ def _post(query: str, mode: str) -> dict:
     return response.json()
 
 
-# Кэшируем по тексту вопроса: повторный вопрос не гоняет LLM-агента заново,
-# а reruns (клик по источнику и т.п.) вообще не приводят к сетевым вызовам.
-@st.cache_data(show_spinner=False, max_entries=64, ttl=3600)
-def _ask_cached(query: str, mode: str) -> tuple[str, list[dict]]:
-    data = _post(query, mode)
-    return data.get("answer", ""), data.get("sources", [])
-
-
 def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
     """Возвращает (ответ, документы-источники).
 
-    Бросает SearchNotReady, если сервис не настроен, и SearchError при сбое.
+    Вызывается из фонового потока (поиск переживает переключение вкладок),
+    поэтому внутри нет никаких st.* — только httpx. Бросает SearchNotReady,
+    если сервис не настроен, и SearchError при сбое.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска ещё не подключён.")
 
     try:
-        return _ask_cached(question, mode)
+        data = _post(question, mode)
+        return data.get("answer", ""), data.get("sources", [])
     except httpx.HTTPStatusError as error:
         raise SearchError(
             f"Сервис поиска вернул {error.response.status_code}."
