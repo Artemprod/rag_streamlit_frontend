@@ -17,28 +17,38 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from config import config
 
-# Один поток: заливки идут в фоне (UI остаётся отзывчивым), но строго по
-# очереди. Параллельные PUT в один бакет Selectel регулярно отвечают
-# 409 OperationAborted — причём на разных ключах, то есть дело не в дубликатах,
-# а в конкурентных операциях над бакетом. Последовательная заливка убирает
-# причину, а не борется с симптомом ретраями; скорость упирается в сеть,
-# а не в число потоков.
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="s3-upload")
+# Заливки идут в фоне (UI остаётся отзывчивым) и параллельно: тысяча
+# документов по одному в поток — это часы. Четыре потока — компромисс между
+# скоростью и нагрузкой на бакет; больше упирается уже не в нас, а в лимиты
+# хранилища.
+_UPLOAD_CONCURRENCY = 4
+_executor = ThreadPoolExecutor(
+    max_workers=_UPLOAD_CONCURRENCY, thread_name_prefix="s3-upload"
+)
 
 # Временные отказы хранилища. s3fs переводит коды S3 в OSError с errno:
 #   EBUSY  — OperationAborted (409, «conflicting conditional operation»),
 #            SlowDown/503 — конкурентные операции над бакетом, троттлинг;
 #   EAGAIN/ETIMEDOUT/ECONNRESET — сетевые срывы.
-# Сам s3fs такие ошибки НЕ ретраит (retry только на SlowDown-строке и
-# сетевых исключениях), поэтому одиночный 409 ронял всю заливку.
+# Сам s3fs такие ошибки НЕ ретраит (в его _error_wrapper только SlowDown,
+# «reduce your request rate» и сетевые исключения), поэтому 409 прилетает
+# наружу и без нашего повтора роняет заливку файла.
 _TRANSIENT_ERRNOS = frozenset(
     {errno.EBUSY, errno.EAGAIN, errno.ETIMEDOUT, errno.ECONNRESET, errno.EPIPE}
 )
+
+# Повторы со СЛУЧАЙНОЙ паузой. Это ключевое: при обычной экспоненте все потоки
+# падают почти одновременно и повторяют в одни и те же моменты (1с, 2с, 4с…),
+# то есть заново сталкиваются на бакете — так пять попыток и выгорали впустую.
+# Джиттер разводит их по времени, и повтор попадает в свободное окно.
+# Окно: до 7 попыток, пауза случайная в пределах экспоненты до 30с.
+_RETRY_ATTEMPTS = 7
+_RETRY_MAX_WAIT = 30
 
 
 def _is_transient(error: BaseException) -> bool:
@@ -70,16 +80,31 @@ def _safe_key(name: str) -> str:
     return "/".join(parts) or "file"
 
 
+def _log_retry(state) -> None:
+    """След в логе на каждый повтор — видно, часто ли хранилище отбивает PUT."""
+    logger.warning(
+        "S3 отбил запись (попытка {}): {}. Повторяю…",
+        state.attempt_number,
+        state.outcome.exception(),
+    )
+
+
 @retry(
     retry=retry_if_exception(_is_transient),
-    stop=stop_after_attempt(8),
-    wait=wait_exponential(multiplier=1, min=1, max=30),
+    stop=stop_after_attempt(_RETRY_ATTEMPTS),
+    wait=wait_random_exponential(multiplier=1, max=_RETRY_MAX_WAIT),
+    before_sleep=_log_retry,
     reraise=True,
 )
 def _write(key: str, data: bytes) -> None:
-    """Одна попытка записи объекта. Ретраится только на временных отказах."""
-    with get_s3().open(key, "wb") as dst:
-        dst.write(data)
+    """Одна попытка записи объекта. Ретраится только на временных отказах.
+
+    pipe_file, а не open(key, "wb"): это один put_object на файл вплоть до
+    100 МБ, тогда как открытый на запись файл уходит в multipart уже с 50 МБ
+    (s3fs.default_block_size). Меньше запросов к бакету — меньше поводов
+    для конфликта.
+    """
+    get_s3().pipe_file(key, data)
 
 
 def _put(key: str, data: bytes) -> str:
