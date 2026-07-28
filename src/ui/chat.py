@@ -31,12 +31,24 @@ def _open_preview(s3_key: str, documents: list) -> None:
     _preview_dialog(s3_key, documents)
 
 
+def _wait_for_answer(prompt: str):
+    """Пока сервис ищет — показываем вопрос и «печатающего» ассистента.
+
+    Вопрос иначе появился бы только после ререна, то есть через десяток секунд
+    после нажатия Enter, и казалось бы, что ввод не сработал.
+    """
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    with st.chat_message("assistant"):
+        st.html('<div class="typing"><span></span><span></span><span></span></div>')
+        return retrieval_client.ask(prompt)
+
+
 def _handle_prompt(prompt: str) -> None:
     """Добавляет вопрос в историю, получает ответ и сохраняет его."""
     st.session_state.messages.append({"role": "user", "content": prompt})
     try:
-        with st.spinner("Ищу ответ по документам…"):
-            answer, sources = retrieval_client.ask(prompt)
+        answer, sources = _wait_for_answer(prompt)
         st.session_state.messages.append(
             {"role": "assistant", "content": answer, "sources": sources}
         )

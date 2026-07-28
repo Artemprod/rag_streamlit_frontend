@@ -53,6 +53,30 @@ _CSS = """
 
   h1, h2, h3 { letter-spacing: -0.01em; }
 
+  /* Индикатор ожидания ответа: три «печатающие» точки вместо спиннера.
+     currentColor — цвет текста темы, поэтому индикатор виден и на светлой,
+     и на тёмной. Разметку рисует ui/chat.py. */
+  .typing { display: flex; gap: 0.35rem; padding: 0.4rem 0; }
+  .typing span {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+    animation: typing-dot 1.2s ease-in-out infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.15s; }
+  .typing span:nth-child(3) { animation-delay: 0.30s; }
+
+  @keyframes typing-dot {
+    0%, 80%, 100% { transform: translateY(0);        opacity: 0.25; }
+    40%           { transform: translateY(-0.28rem); opacity: 0.9;  }
+  }
+
+  /* Уважаем системную настройку «меньше движения». */
+  @media (prefers-reduced-motion: reduce) {
+    .typing span { animation: none; opacity: 0.5; }
+  }
+
   /* ── Адаптивность: планшеты и телефоны ──────────────────────────────
      На узких экранах любые колонки (заголовок+кнопка, набор+контекст)
      складываются в один столбец на всю ширину — ничего не наезжает и не
