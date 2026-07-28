@@ -101,18 +101,16 @@ _UPLOADER_HELP = (
 )
 
 
-def _record_job(
-    *,
-    dataset: str,
-    file_names: list[str],
-    status: str,
-    job_id: str | None = None,
-    error: str | None = None,
-) -> None:
+def _record_job(*, dataset: str, file_names: list[str], status: str, **extra) -> None:
+    """Заводит запись о пакете. В extra — необязательные поля записи:
+
+    job_id, error, а для неудавшейся постановки ещё s3_keys и domain_context:
+    файлы уже залиты, и повтор не должен гнать их через хранилище заново.
+    """
     st.session_state.jobs.insert(
         0,
         {
-            "job_id": job_id,
+            "job_id": None,
             "created_at": datetime.now().strftime("%H:%M:%S"),
             "dataset": dataset,
             "file_names": file_names,
@@ -120,7 +118,10 @@ def _record_job(
             "status": status,
             "progress": 0.0,
             "stats": None,
-            "error": error,
+            "error": None,
+            "s3_keys": None,
+            "domain_context": None,
+            **extra,
         },
     )
 
@@ -207,6 +208,8 @@ def _dispatch(ready: list, dataset: str, domain_context: str | None) -> None:
             file_names=[name for name, _ in ok],
             status="upload_failed",
             error=str(error),
+            s3_keys=[key for _, key in ok],
+            domain_context=domain_context,
         )
         st.toast(f"Не удалось поставить на обработку: {error}", icon="❌")
 
@@ -363,6 +366,29 @@ def _render_dead_letters(job_id: str, key: str) -> None:
             st.caption(", ".join(items[:_MAX_NAMES_SHOWN]))
 
 
+def _render_retry(job: dict, key: str) -> None:
+    """Повторная постановка уже залитых файлов — без новой заливки в S3.
+
+    Сервис обработки может быть недоступен в момент отправки (перезапуск,
+    падение сети). Файлы при этом уже лежат в хранилище, и гнать их туда
+    заново вредно вдвойне: долго и лишний повод для конфликта на бакете.
+    Поэтому повторяем только постановку, по сохранённым ключам.
+    """
+    if not job.get("s3_keys") or not st.button(
+        "🔁 Повторить отправку", key=f"retry_{key}"
+    ):
+        return
+    try:
+        result = process_client.process(
+            job["s3_keys"], job["dataset"], job.get("domain_context")
+        )
+    except ProcessError as error:
+        st.warning(f"Сервис всё ещё недоступен: {error}")
+        return
+    job.update(job_id=result.get("job_id"), status="queued", error=None)
+    st.rerun()
+
+
 def _render_history() -> None:
     st.subheader("История обработки")
     jobs = [
@@ -390,6 +416,10 @@ def _render_history() -> None:
                 st.error(job["error"])
             if job["status"] == "completed_with_errors" and job.get("job_id"):
                 _render_dead_letters(job["job_id"], f"{idx}_{job['job_id']}")
+            if job["status"] == "upload_failed":
+                # Ключ по времени создания, а не по индексу: записи переезжают
+                # между «в работе» и историей, индекс не стабилен.
+                _render_retry(job, f"{job['created_at']}_{idx}")
 
 
 def render() -> None:
