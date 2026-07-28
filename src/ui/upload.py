@@ -258,6 +258,9 @@ def _apply_snapshot(job: dict, snapshot: dict) -> None:
     job["status"] = snapshot.get("status", job["status"])
     job["progress"] = snapshot.get("progress", job.get("progress") or 0.0)
     job["error"] = snapshot.get("error") or job.get("error")
+    # Позиция в очереди сервиса: пока задача ждёт, это единственное, что
+    # вообще движется, — по ней видно, что очередь разбирается.
+    job["queue_position"] = snapshot.get("queue_position")
     job["stats"] = {name: snapshot.get(name, 0) for name in _COUNTERS}
 
 
@@ -293,6 +296,20 @@ def _total_stats(jobs: list[dict]) -> dict | None:
     return {
         name: sum(snapshot.get(name, 0) for snapshot in snapshots) for name in _COUNTERS
     }
+
+
+def _ahead_line(queued: list[dict]) -> str:
+    """Сколько чужих задач стоит перед нашей очередью.
+
+    Сервис берёт задачи по одной и по порядку, поэтому пока перед нами есть
+    хвост прошлых загрузок, проценты стоят на нуле — и это не поломка. Число
+    впереди уменьшается на глазах, по нему видно, что очередь разбирается.
+    """
+    positions = [job["queue_position"] for job in queued if job.get("queue_position")]
+    if not positions:
+        return ""
+    ahead = min(positions) - 1
+    return f"впереди задач: {ahead}" if ahead > 0 else "следующая на очереди"
 
 
 @st.fragment(run_every=_POLL_INTERVAL)
@@ -339,9 +356,17 @@ def _render_active_jobs() -> None:
 
     st.subheader("В работе")
     st.progress(done / files if files else 0.0, text=" · ".join(parts))
+
+    # Пока всё стоит в очереди, проценты честно равны нулю — и полоса выглядит
+    # зависшей. Показываем то, что на самом деле движется: место в очереди
+    # сервиса и время последнего ответа. Иначе пользователь видит «ничего не
+    # происходит» там, где идёт разбор чужих задач.
+    details = [_ahead_line(queued)]
     stats = _total_stats(running)
     if stats:
-        st.caption(_stats_line(stats))
+        details.append(_stats_line(stats))
+    details.append(f"обновлено {datetime.now().strftime('%H:%M:%S')}")
+    st.caption(" · ".join(part for part in details if part))
 
     if any(process_client.is_terminal(job["status"]) for job in active):
         st.rerun(scope="app")
