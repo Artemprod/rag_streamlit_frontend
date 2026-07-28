@@ -108,7 +108,7 @@ def render() -> None:
     title_col, help_col, refresh_col = st.columns(
         [0.6, 0.2, 0.2], vertical_alignment="center"
     )
-    title_col.title("🕸️ Граф знаний")
+    title_col.markdown("## 🕸️ Граф знаний")
     with help_col.popover("❓ Как пользоваться", width="stretch"):
         st.markdown(_TUTORIAL)
     if refresh_col.button("🔄 Обновить", width="stretch", help="Перечитать граф"):

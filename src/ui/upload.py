@@ -355,7 +355,7 @@ def _render_history() -> None:
 
 
 def render() -> None:
-    st.title("📤 Загрузка документов")
+    st.markdown("## 📤 Загрузка документов")
     st.caption(
         "Добавьте файлы или папку — они уйдут на обработку и станут доступны "
         "для вопросов в чате. Поддерживаются PDF, DOCX, PPTX, XLSX/XLS, "

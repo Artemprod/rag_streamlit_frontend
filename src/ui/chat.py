@@ -193,40 +193,11 @@ def _render_history() -> None:
                 _feedback(message, ns=f"{chat_ns}_{i}")
 
 
-def _switch_chat(messages: list, chat_id: str | None) -> None:
-    st.session_state.messages = messages
-    st.session_state.chat_id = chat_id
-    st.rerun()
-
-
-def _render_header() -> None:
-    """Заголовок + история диалогов + новый диалог."""
-    title_col, history_col, new_col = st.columns(
-        [0.6, 0.2, 0.2], vertical_alignment="center"
-    )
-    title_col.title("💬 Спросить документы")
-
-    with history_col.popover("🗂️ История", width="stretch"):
-        saved = chats.summaries()
-        if not saved:
-            st.caption("Прошлых диалогов пока нет.")
-        for chat in saved:
-            if st.button(
-                f"{chat['updated_at']} · {chat['title']}",
-                key=f"hist_{chat['id']}",
-                width="stretch",
-            ):
-                _switch_chat(chats.get(chat["id"]), chat["id"])
-
-    if new_col.button(
-        "✚ Новый", width="stretch", help="Начать новый диалог (текущий сохранится)"
-    ):
-        _switch_chat([], None)
-
-
 def render() -> None:
     theme.wide("1400px")  # диалогу тесно в колонке для чтения форм
-    _render_header()
+    # История и «Новый чат» живут в сайдбаре (привычно по ChatGPT);
+    # заголовок — тише (##), чтобы контент начинался выше.
+    st.markdown("## 💬 Спросить документы")
 
     if st.session_state.messages:
         _render_history()

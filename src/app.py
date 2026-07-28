@@ -38,17 +38,20 @@ init_state()
 # Логотип рисуется в своём слоте над меню — вызываем до навигации.
 sidebar.render_brand()
 
+# url_path обязателен и уникален: все функции называются render(),
+# иначе st.navigation вывел бы одинаковый путь и упал.
+chat_page = st.Page(chat.render, title="Чат", icon="💬", url_path="chat", default=True)
 pages = st.navigation(
     [
-        # url_path обязателен и уникален: обе функции называются render(),
-        # иначе st.navigation выведет одинаковый путь и упадёт.
-        st.Page(chat.render, title="Чат", icon="💬", url_path="chat", default=True),
+        chat_page,
         st.Page(upload.render, title="Загрузка", icon="📤", url_path="upload"),
         st.Page(graph.render, title="Граф знаний", icon="🕸️", url_path="graph"),
     ]
 )
 
 with st.sidebar:
+    st.divider()
+    sidebar.render_chat_history(chat_page)
     st.divider()
     sidebar.render_status()
     sidebar.render_help()
