@@ -151,7 +151,10 @@ def _handle_prompt(prompt: str, label: str | None = None) -> None:
         "question": prompt,
         # Фразы выбираются один раз на запрос: индикатор рисуется вне
         # фрагмента-опросчика, и CSS-цикл не сбрасывается каждый тик.
-        "phrases_html": f"<span>{escape(random.choice(_SEARCH_PHRASES))}</span>",
+        "phrases_html": "".join(
+            f"<span>{escape(text)}</span>"
+            for text in random.sample(_SEARCH_PHRASES, 50)
+        ),
     }
 
 
