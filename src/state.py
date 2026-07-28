@@ -8,8 +8,10 @@ import streamlit as st
 
 # Значения по умолчанию для всего пользовательского состояния сессии.
 _DEFAULTS: dict = {
-    # Чат: история сообщений [{role, content, sources}]
+    # Чат: история сообщений [{role, content, sources, mode}]
     "messages": [],
+    # id сохранённого диалога (None — новый, ещё не сохранялся)
+    "chat_id": None,
     # Загрузка: фьючерсы фоновой заливки в S3 и метаданные пакета
     "upload_futures": None,
     "upload_meta": None,

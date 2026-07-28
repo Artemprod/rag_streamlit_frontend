@@ -6,11 +6,15 @@
 (клик по источнику) не дёргают LLM повторно.
 """
 
+import random
+from html import escape
+
 import streamlit as st
 from loguru import logger
 
-from services import retrieval_client
+from services import chats, retrieval_client
 from services.retrieval_client import SearchError, SearchNotReady
+from ui import theme
 from ui.preview import preview_file
 from ui.sources import render_sources
 
@@ -20,25 +24,57 @@ _EXAMPLES = [
     "Сделай краткое резюме по загруженным файлам",
 ]
 
-# Режимы ответа. Ключ — подпись переключателя, значение — (mode API, подсказка
-# в поле ввода). Спор по регламенту и сверка противоречий — рабочие сценарии
-# комплаенса/безопасности, обычный режим — свободные вопросы.
+# Режимы ответа: label переключателя → (mode API, подсказка в поле ввода,
+# цвет бейджа, описание для пользователя). Спор по регламенту и сверка
+# противоречий — сценарии комплаенса/безопасности, обычный режим — вопросы.
 _MODES = {
-    "💬 Вопрос": ("default", "Спросите что-нибудь о документах…"),
+    "💬 Вопрос": (
+        "default",
+        "Спросите что-нибудь о документах…",
+        "violet",
+        "обычный ответ по документам с источниками",
+    ),
     "🛡️ По регламенту": (
         "compliance",
         "Опишите спорную ситуацию — отвечу вердиктом с цитатами пунктов…",
+        "blue",
+        "для спора «можно/нельзя»: вердикт + дословные цитаты пунктов",
     ),
     "⚖️ Противоречия": (
         "contradictions",
         "Назовите тему или процесс — сверю, не расходятся ли документы…",
+        "orange",
+        "назовите тему — сверю документы между собой на расхождения",
     ),
 }
+_DEFAULT_MODE_LABEL = next(iter(_MODES))
 
 
-def _current_mode() -> tuple[str, str]:
-    label = st.session_state.get("chat_mode") or next(iter(_MODES))
-    return _MODES.get(label, next(iter(_MODES.values())))
+def _current_mode_label() -> str:
+    label = st.session_state.get("chat_mode") or _DEFAULT_MODE_LABEL
+    return label if label in _MODES else _DEFAULT_MODE_LABEL
+
+
+# Фразы ожидания «как в мессенджере с характером». Каждый запрос показывает
+# свои четыре — повторы редки, а CSS листает их по кругу без JS.
+_SEARCH_PHRASES = [
+    "Листаю регламенты…",
+    "Сдуваю пыль с папки №7…",
+    "Спрашиваю у архивариуса…",
+    "Сверяю пункты и подпункты…",
+    "Иду вдоль стеллажа Б…",
+    "Перечитываю мелкий шрифт…",
+    "Кто-то опять не вернул документ на место…",
+    "Проверяю примечания под звёздочкой…",
+    "Согласовываю с воображаемым юристом…",
+    "Перебираю подшивку за прошлый год…",
+    "Заглядываю в приложение к приказу…",
+    "Расставляю закладки…",
+    "Пролистываю оглавление…",
+    "Разбираю почерк на полях…",
+    "Уточняю формулировки…",
+    "Ищу нужный абзац…",
+]
 
 
 @st.dialog("Просмотр документа", width="large")
@@ -52,27 +88,34 @@ def _open_preview(s3_key: str, documents: list) -> None:
     _preview_dialog(s3_key, documents)
 
 
-def _wait_for_answer(prompt: str):
-    """Пока сервис ищет — показываем вопрос и «печатающего» ассистента.
+def _wait_for_answer(prompt: str, mode: str):
+    """Пока сервис ищет — вопрос уже на экране, ассистент «печатает».
 
-    Вопрос иначе появился бы только после ререна, то есть через десяток секунд
-    после нажатия Enter, и казалось бы, что ввод не сработал.
+    Под точками крутятся фразы (стилизованный CSS-цикл): видно, что процесс
+    идёт, и ожидание переносится веселее.
     """
-    mode, _ = _current_mode()
+    phrases = "".join(
+        f"<span>{escape(text)}</span>" for text in random.sample(_SEARCH_PHRASES, 4)
+    )
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        st.html('<div class="typing"><span></span><span></span><span></span></div>')
+        st.html(
+            '<div class="typing"><span></span><span></span><span></span></div>'
+            f'<div class="phrases">{phrases}</div>'
+        )
         return retrieval_client.ask(prompt, mode=mode)
 
 
 def _handle_prompt(prompt: str) -> None:
-    """Добавляет вопрос в историю, получает ответ и сохраняет его."""
+    """Добавляет вопрос в историю, получает ответ, автосохраняет диалог."""
+    label = _current_mode_label()
+    mode = _MODES[label][0]
     st.session_state.messages.append({"role": "user", "content": prompt})
     try:
-        answer, sources = _wait_for_answer(prompt)
+        answer, sources = _wait_for_answer(prompt, mode)
         st.session_state.messages.append(
-            {"role": "assistant", "content": answer, "sources": sources}
+            {"role": "assistant", "content": answer, "sources": sources, "mode": label}
         )
     except SearchNotReady as error:
         st.session_state.messages.append(
@@ -90,6 +133,9 @@ def _handle_prompt(prompt: str) -> None:
                 "sources": [],
             }
         )
+    st.session_state.chat_id = chats.save(
+        st.session_state.chat_id, st.session_state.messages
+    )
 
 
 def _render_welcome() -> None:
@@ -127,40 +173,80 @@ def _feedback(message: dict, ns: str) -> None:
 
 
 def _render_history() -> None:
+    # Ключи виджетов включают id диалога: иначе оценка «fb_0» из одного
+    # диалога проросла бы в первое сообщение другого после переключения.
+    chat_ns = st.session_state.chat_id or "new"
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
+            # Ответы спец-режимов помечены бейджем: видно, чем этот ответ
+            # отличается от соседних и в каком режиме переспрашивать.
+            label = message.get("mode")
+            if label in _MODES and label != _DEFAULT_MODE_LABEL:
+                st.markdown(f":{_MODES[label][2]}-badge[{label}]")
             st.markdown(message["content"])
             if message["role"] == "assistant":
                 render_sources(
-                    message.get("sources", []), ns=str(i), on_select=_open_preview
+                    message.get("sources", []),
+                    ns=f"{chat_ns}_{i}",
+                    on_select=_open_preview,
                 )
-                _feedback(message, ns=str(i))
+                _feedback(message, ns=f"{chat_ns}_{i}")
+
+
+def _switch_chat(messages: list, chat_id: str | None) -> None:
+    st.session_state.messages = messages
+    st.session_state.chat_id = chat_id
+    st.rerun()
+
+
+def _render_header() -> None:
+    """Заголовок + история диалогов + новый диалог."""
+    title_col, history_col, new_col = st.columns(
+        [0.6, 0.2, 0.2], vertical_alignment="center"
+    )
+    title_col.title("💬 Спросить документы")
+
+    with history_col.popover("🗂️ История", width="stretch"):
+        saved = chats.summaries()
+        if not saved:
+            st.caption("Прошлых диалогов пока нет.")
+        for chat in saved:
+            if st.button(
+                f"{chat['updated_at']} · {chat['title']}",
+                key=f"hist_{chat['id']}",
+                width="stretch",
+            ):
+                _switch_chat(chats.get(chat["id"]), chat["id"])
+
+    if new_col.button(
+        "✚ Новый", width="stretch", help="Начать новый диалог (текущий сохранится)"
+    ):
+        _switch_chat([], None)
 
 
 def render() -> None:
-    title_col, clear_col = st.columns([0.75, 0.25], vertical_alignment="center")
-    title_col.title("💬 Спросить документы")
-    if st.session_state.messages and clear_col.button(
-        "🧹 Очистить", width="stretch", help="Очистить историю диалога"
-    ):
-        st.session_state.messages = []
-        st.rerun()
+    theme.wide("1400px")  # диалогу тесно в колонке для чтения форм
+    _render_header()
 
     if st.session_state.messages:
         _render_history()
     else:
         _render_welcome()
 
-    # Переключатель режима живёт над полем ввода и действует на следующий
-    # вопрос. По умолчанию — обычный вопрос; выбор хранится в сессии.
+    # Переключатель режима действует на следующий вопрос; описание выбранного
+    # режима — цветной строкой, тем же цветом помечаются его ответы в истории.
     st.pills(
         "Режим ответа",
         list(_MODES),
-        default=next(iter(_MODES)),
+        default=_DEFAULT_MODE_LABEL,
         key="chat_mode",
         label_visibility="collapsed",
+        help="Режимы меняют форму ответа: обычный, вердикт по регламенту, "
+        "сверка документов на противоречия",
     )
-    _, placeholder = _current_mode()
+    label = _current_mode_label()
+    _, placeholder, color, description = _MODES[label]
+    st.markdown(f":{color}-background[{label} — {description}]")
     if prompt := st.chat_input(placeholder):
         _handle_prompt(prompt)
         st.rerun()

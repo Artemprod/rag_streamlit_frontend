@@ -10,17 +10,58 @@ from st_link_analysis import EdgeStyle, Event, NodeStyle, st_link_analysis
 
 from services import retrieval_client
 from services.retrieval_client import SearchError, SearchNotReady
+from ui import theme
 from ui.preview import icon_for, preview_file
 
 # Группы узлов: конкретные сущности и их категории (is_a). Цвета согласованы
-# с темой (индиго/фиолетовый бренда + нейтральный для категорий).
+# с темой (индиго/фиолетовый бренда + янтарный для категорий).
 _NODE_STYLES = [
     NodeStyle("Entity", "#6366f1", "name", "description"),
     NodeStyle("EntityType", "#f59e0b", "name", "folder"),
 ]
-_EDGE_STYLES = [EdgeStyle("*", labeled=True, directed=True)]
 
 _CLICK = Event("node_click", "click tap", "node")
+
+# fcose распутывает клубок заметно лучше дефолтного cose; репульсия выше
+# дефолта — узлам с длинными русскими подписями нужно больше воздуха.
+_LAYOUT = {
+    "name": "fcose",
+    "animate": "end",
+    "fit": True,
+    "padding": 30,
+    "nodeRepulsion": 6000,
+    "nodeDimensionsIncludeLabels": True,
+}
+
+_TUTORIAL = """
+**Как пользоваться графом**
+
+- **Кружки** — сущности из ваших документов (отделы, комитеты, процессы),
+  **янтарные** — их категории.
+- **Клик по кружку** — внизу появится карточка: в каких документах сущность
+  упоминается, файл открывается по клику.
+- **Колесо мыши** — масштаб, **перетаскивание** — двигать сцену и узлы.
+- **Поиск** слева сужает граф до найденных сущностей и их соседей —
+  так проще распутать плотный участок.
+- Кнопки в правом верхнем углу: перестроить раскладку, скачать, во весь экран.
+"""
+
+
+def _filter(data: dict, query: str) -> tuple[list, list]:
+    """Найденные по подстроке сущности + их соседи и связи между ними."""
+    nodes, edges = data["nodes"], data["edges"]
+    if not query:
+        return nodes, edges
+    needle = query.lower()
+    hits = {n["id"] for n in nodes if needle in n["name"].lower()}
+    keep = set(hits)
+    for edge in edges:
+        if edge["source"] in hits or edge["target"] in hits:
+            keep.update((edge["source"], edge["target"]))
+    return (
+        [n for n in nodes if n["id"] in keep],
+        [e for e in edges if e["source"] in keep and e["target"] in keep],
+    )
 
 
 @st.cache_data(ttl=120, show_spinner="Собираю граф знаний…")
@@ -62,16 +103,16 @@ def _render_node_card(node: dict) -> None:
 
 
 def render() -> None:
-    title_col, refresh_col = st.columns([0.78, 0.22], vertical_alignment="center")
+    theme.wide()  # графу нужен весь экран, а не колонка для чтения
+
+    title_col, help_col, refresh_col = st.columns(
+        [0.6, 0.2, 0.2], vertical_alignment="center"
+    )
     title_col.title("🕸️ Граф знаний")
+    with help_col.popover("❓ Как пользоваться", width="stretch"):
+        st.markdown(_TUTORIAL)
     if refresh_col.button("🔄 Обновить", width="stretch", help="Перечитать граф"):
         _load.clear()
-
-    st.caption(
-        "Сущности, которые система извлекла из ваших документов, и связи между "
-        "ними. Кликните по сущности — внизу появятся документы, где она "
-        "упоминается."
-    )
 
     try:
         data = _load()
@@ -90,22 +131,42 @@ def render() -> None:
         )
         return
 
+    search_col, labels_col = st.columns([0.75, 0.25], vertical_alignment="bottom")
+    query = search_col.text_input(
+        "Поиск по сущностям",
+        placeholder="например: правление — покажу её и соседей",
+    )
+    show_labels = labels_col.toggle(
+        "Подписи связей",
+        value=False,
+        help="Названия отношений на линиях. На большом графе создают кашу — "
+        "включайте, когда сузили граф поиском.",
+    )
+
+    nodes, edges = _filter(data, query)
+    if not nodes:
+        st.info(f"Сущностей по запросу «{query}» не нашлось.", icon="🔍")
+        return
+    st.caption(f"Показано сущностей: {len(nodes)}, связей: {len(edges)}")
+
     elements = {
         "nodes": [
             # docs в data не кладём: встроенная инфопанель компонента показала
             # бы их сырым JSON. Карточку с кнопками рисуем сами по клику.
             {"data": {"id": n["id"], "label": n["type"], "name": n["name"]}}
-            for n in data["nodes"]
+            for n in nodes
         ],
-        "edges": [{"data": e} for e in data["edges"]],
+        "edges": [{"data": e} for e in edges],
     }
     clicked = st_link_analysis(
         elements,
-        layout="cose",
+        layout=_LAYOUT,
         node_styles=_NODE_STYLES,
-        edge_styles=_EDGE_STYLES,
-        height=560,
-        key="knowledge_graph",
+        edge_styles=[EdgeStyle("*", caption="label" if show_labels else None, directed=True)],
+        height=640,
+        # Ключ зависит от фильтров: смена выборки перемонтирует компонент
+        # и заново раскладывает граф, а не оставляет старую сцену.
+        key=f"kg_{hash((query, show_labels)) & 0xFFFF}",
         events=[_CLICK],
     )
 
