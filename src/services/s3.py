@@ -1,4 +1,5 @@
-"""Работа с S3/MinIO: фоновая заливка исходников и кэшированное чтение.
+"""
+Работа с S3/MinIO: фоновая заливка исходников и кэшированное чтение.
 
 Один S3FileSystem на процесс. Заливка — в пуле потоков, чтобы не блокировать
 рендер Streamlit. Чтение кэшируется, чтобы не качать объект на каждый rerun.
@@ -22,32 +23,11 @@ from tenacity import (
 
 from config import config
 
-# Заливки идут в фоне (UI остаётся отзывчивым) и параллельно: тысяча
-# документов по одному в поток — это часы.
-#
-# Отдельно считать, сколько нужно воркеров под размер пачки, не нужно: пул
-# сам поднимает поток на каждую задачу, пока не упрётся в потолок, и растёт
-# между пачками. Десять документов зальются в десять потоков, тысяча — в
-# _UPLOAD_CONCURRENCY, то есть «столько воркеров, сколько файлов, но не
-# больше потолка» получается само.
-#
-# Потолок и есть единственная настоящая настройка: он ограничивает не нас,
-# а нагрузку на бакет. Четыре, а не восемь: замер на живом Selectel показал,
-# что частота 409 растёт вместе с числом одновременных PUT (при восьми —
-# конфликт почти на каждую пачку, один файл терялся насовсем). Если в логе
-# зачастят «S3 отбил запись» — снижать сюда дальше.
 _UPLOAD_CONCURRENCY = 4
 _executor = ThreadPoolExecutor(
     max_workers=_UPLOAD_CONCURRENCY, thread_name_prefix="s3-upload"
 )
 
-# Временные отказы хранилища. s3fs переводит коды S3 в OSError с errno:
-#   EBUSY  — OperationAborted (409, «conflicting conditional operation»),
-#            SlowDown/503 — конкурентные операции над бакетом, троттлинг;
-#   EAGAIN/ETIMEDOUT/ECONNRESET — сетевые срывы.
-# Сам s3fs такие ошибки НЕ ретраит (в его _error_wrapper только SlowDown,
-# «reduce your request rate» и сетевые исключения), поэтому 409 прилетает
-# наружу и без нашего повтора роняет заливку файла.
 _TRANSIENT_ERRNOS = frozenset(
     {errno.EBUSY, errno.EAGAIN, errno.ETIMEDOUT, errno.ECONNRESET, errno.EPIPE}
 )
@@ -80,12 +60,6 @@ def get_s3() -> s3fs.S3FileSystem:
 
 
 def _safe_key(name: str) -> str:
-    """Относительный путь → безопасный ключ внутри бакета.
-
-    Сохраняем структуру папок (важно при загрузке директории, иначе
-    a/report.pdf и b/report.pdf схлопнутся), но убираем ведущие слэши и
-    обход каталогов (`..`), чтобы не выйти за пределы бакета.
-    """
     parts = [
         part
         for part in PurePosixPath(name.replace("\\", "/")).parts
@@ -95,11 +69,6 @@ def _safe_key(name: str) -> str:
 
 
 def _log_retry(state) -> None:
-    """След в логе на каждый повтор: какой файл, какая попытка, что ответили.
-
-    Без имени файла лог бесполезен — по нему не понять, мучается ли один
-    документ или отбиваются все подряд.
-    """
     logger.warning(
         "S3 отбил запись {} (попытка {} из {}): {}. Повторяю…",
         state.args[0] if state.args else "?",
@@ -134,14 +103,35 @@ def _stored_size(key: str) -> int | None:
     reraise=True,
 )
 def _write(key: str, data: bytes) -> None:
-    """Одна попытка записи объекта. Ретраится только на временных отказах.
+    """Одна попытка записи объекта с предварительным абортом «висящих» multipart-загрузок.
 
-    pipe_file, а не open(key, "wb"): это один put_object на файл вплоть до
-    100 МБ, тогда как открытый на запись файл уходит в multipart уже с 50 МБ
-    (s3fs.default_block_size). Меньше запросов к бакету — меньше поводов
-    для конфликта.
+    Причина 409 — незавершённый multipart от прошлого сбоя на том же ключе.
+    Удаляем все такие загрузки перед PUT, чтобы исключить конфликт навсегда.
     """
-    get_s3().pipe_file(key, data)
+    s3 = get_s3()
+    bucket = config.s3_bucket
+    object_key = key[len(bucket) + 1:]   # убираем "bucket/" из ключа
+
+    try:
+        # В текущей версии s3fs list_multipart_uploads может не принимать prefix,
+        # поэтому получаем все и фильтруем сами.
+        for upload in s3.list_multipart_uploads(bucket=bucket):
+            if upload["Key"] == object_key:
+                logger.warning(
+                    "Найден незавершённый multipart для {}, абортирую (upload_id={})",
+                    key, upload["UploadId"]
+                )
+                s3.abort_multipart_upload(
+                    bucket=bucket,
+                    key=object_key,
+                    upload_id=upload["UploadId"],
+                )
+    except Exception as exc:
+        logger.warning(
+            "Не удалось проверить/абортировать multipart для {}: {}", key, exc
+        )
+
+    s3.pipe_file(key, data)
 
 
 def _abort_stale_uploads(key: str) -> int:
@@ -215,11 +205,6 @@ def _put(key: str, data: bytes) -> str:
     return key
 
 
-# Заливки, идущие прямо сейчас, по ключу. Два конкурентных PUT одного ключа
-# (файл выбран и в «файлах», и в «папке»; повторная отправка при живой старой
-# заливке после обновления страницы) — это 409 OperationAborted от хранилища
-# на весь срок первой заливки, ретраи не спасают. Вместо второго PUT отдаём
-# уже идущий future.
 _in_flight: dict[str, Future] = {}
 _in_flight_lock = threading.Lock()
 
@@ -242,11 +227,6 @@ def _forget(key: str, future: Future) -> None:
 
 
 def upload_async(uploaded_files: list) -> list[tuple[str, Future]]:
-    """Байты читаем сразу (виджет живёт только до rerun), заливаем в фоне.
-
-    Возвращает пары (имя файла, future c s3-ключом) — по одной на уникальный
-    ключ: дубликаты выбора схлопываются в одну заливку.
-    """
     pairs = []
     seen: set[str] = set()
     for file in uploaded_files:
