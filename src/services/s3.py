@@ -55,6 +55,7 @@ def get_s3() -> s3fs.S3FileSystem:
         key=config.s3_access_key,
         secret=config.s3_secret_key,
         endpoint_url=config.s3_endpoint_url,
+        config_kwargs={"s3": {"addressing_style": "path"}},
         client_kwargs={"region_name": config.s3_region} if config.s3_region else None,
     )
 
