@@ -82,14 +82,20 @@ def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
 
 
 def knowledge_graph() -> dict:
-    """Подграф знаний: {nodes, edges}. Бросает SearchError при сбое."""
+    """Подграф знаний: {nodes, edges, total_edges, truncated}.
+
+    Бросает SearchError при сбое.
+    """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
     try:
         response = httpx.get(
             f"{config.retrieval_url}/graph",
             headers={"X-API-Key": config.retrieval_api_key},
-            timeout=30,  # Neo4j-обход + обогащение из Postgres, дольше поллинга
+            # Neo4j-обход + обогащение из Postgres, дольше поллинга. Запас
+            # заметный: лимит рёбер поднят до тысяч, и на большом графе обход
+            # с подтягиванием документов-источников идёт ощутимо дольше.
+            timeout=120,
         )
         response.raise_for_status()
         return response.json()

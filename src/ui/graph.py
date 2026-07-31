@@ -147,7 +147,12 @@ def render() -> None:
     if not nodes:
         st.info(f"Сущностей по запросу «{query}» не нашлось.", icon="🔍")
         return
-    st.caption(f"Показано сущностей: {len(nodes)}, связей: {len(edges)}")
+    shown = f"Показано сущностей: {len(nodes)}, связей: {len(edges)}"
+    # Без этой оговорки обрезанный граф неотличим от полного: пользователь
+    # видит связное полотно и считает, что перед ним весь граф.
+    if not query and data.get("truncated"):
+        shown += f" из {data['total_edges']} — граф показан не целиком"
+    st.caption(shown)
 
     elements = {
         "nodes": [
