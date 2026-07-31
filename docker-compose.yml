@@ -19,11 +19,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks: [rag]
+    networks:
+      - rag
+      - dokploy-network
 
 volumes:
   ui_data:
 
 networks:
   rag:
+    external: true
+  dokploy-network:
     external: true
