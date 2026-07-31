@@ -41,32 +41,23 @@ _TUTORIAL = """
 - **Клик по кружку** — внизу появится карточка: в каких документах сущность
   упоминается, файл открывается по клику.
 - **Колесо мыши** — масштаб, **перетаскивание** — двигать сцену и узлы.
-- **Поиск** слева сужает граф до найденных сущностей и их соседей —
-  так проще распутать плотный участок.
+- **Поиск** слева идёт в базу и приносит найденные сущности вместе с
+  соседями. Сразу на экране лежит обзор графа, а не весь он целиком —
+  поэтому нужную сущность ищите поиском: её связи придут, даже если в
+  обзор они не попали.
 - Кнопки в правом верхнем углу: перестроить раскладку, скачать, во весь экран.
 """
 
 
-def _filter(data: dict, query: str) -> tuple[list, list]:
-    """Найденные по подстроке сущности + их соседи и связи между ними."""
-    nodes, edges = data["nodes"], data["edges"]
-    if not query:
-        return nodes, edges
-    needle = query.lower()
-    hits = {n["id"] for n in nodes if needle in n["name"].lower()}
-    keep = set(hits)
-    for edge in edges:
-        if edge["source"] in hits or edge["target"] in hits:
-            keep.update((edge["source"], edge["target"]))
-    return (
-        [n for n in nodes if n["id"] in keep],
-        [e for e in edges if e["source"] in keep and e["target"] in keep],
-    )
-
-
 @st.cache_data(ttl=120, show_spinner="Собираю граф знаний…")
-def _load() -> dict:
-    return retrieval_client.knowledge_graph()
+def _load(query: str) -> dict:
+    """Обзор графа (query="") или окрестность найденных сущностей.
+
+    Поиск ушёл на сервер: фильтровать загруженную выборку на фронте значило
+    искать только среди тех связей, что уже приехали, — до остальных было не
+    добраться. Кэш на query, чтобы возврат к прежнему запросу был мгновенным.
+    """
+    return retrieval_client.knowledge_graph(query or None)
 
 
 @st.dialog("Просмотр документа", width="large")
@@ -114,28 +105,15 @@ def render() -> None:
     if refresh_col.button("🔄 Обновить", width="stretch", help="Перечитать граф"):
         _load.clear()
 
-    try:
-        data = _load()
-    except SearchNotReady as error:
-        st.info(str(error), icon="ℹ️")
-        return
-    except SearchError as error:
-        st.warning(str(error), icon="⚠️")
-        return
-
-    if not data.get("nodes"):
-        st.info(
-            "Граф пока пуст: загрузите документы во вкладке «Загрузка» и "
-            "дождитесь окончания обработки.",
-            icon="🕸️",
-        )
-        return
-
+    # Поиск спрашиваем ДО загрузки: он уходит в запрос к сервису, а не
+    # фильтрует пришедшее.
     search_col, labels_col = st.columns([0.75, 0.25], vertical_alignment="bottom")
     query = search_col.text_input(
         "Поиск по сущностям",
-        placeholder="например: правление — покажу её и соседей",
-    )
+        placeholder="например: правление — найду её в базе и покажу с соседями",
+        help="Ищет по всему графу, а не по видимой части: связи сущности "
+        "придут, даже если в обзор они не попали.",
+    ).strip()
     show_labels = labels_col.toggle(
         "Подписи связей",
         value=False,
@@ -143,15 +121,35 @@ def render() -> None:
         "включайте, когда сузили граф поиском.",
     )
 
-    nodes, edges = _filter(data, query)
-    if not nodes:
-        st.info(f"Сущностей по запросу «{query}» не нашлось.", icon="🔍")
+    try:
+        data = _load(query)
+    except SearchNotReady as error:
+        st.info(str(error), icon="ℹ️")
         return
+    except SearchError as error:
+        st.warning(str(error), icon="⚠️")
+        return
+
+    nodes, edges = data["nodes"], data["edges"]
+    if not nodes:
+        if query:
+            st.info(f"Сущностей по запросу «{query}» не нашлось.", icon="🔍")
+        else:
+            st.info(
+                "Граф пока пуст: загрузите документы во вкладке «Загрузка» и "
+                "дождитесь окончания обработки.",
+                icon="🕸️",
+            )
+        return
+
     shown = f"Показано сущностей: {len(nodes)}, связей: {len(edges)}"
-    # Без этой оговорки обрезанный граф неотличим от полного: пользователь
-    # видит связное полотно и считает, что перед ним весь граф.
-    if not query and data.get("truncated"):
-        shown += f" из {data['total_edges']} — граф показан не целиком"
+    # Без этой оговорки обрезанная выдача неотличима от полной: пользователь
+    # видит связное полотно и считает, что перед ним всё, что нашлось.
+    if data.get("truncated"):
+        tail = "по запросу нашлось" if query else "в графе"
+        shown += f" — {tail} {data['total_edges']}, показаны не все"
+    elif not query:
+        shown += " — это весь граф"
     st.caption(shown)
 
     elements = {

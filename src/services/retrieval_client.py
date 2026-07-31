@@ -81,21 +81,21 @@ def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
         raise SearchError(f"Сервис поиска недоступен: {error}") from error
 
 
-def knowledge_graph() -> dict:
+def knowledge_graph(query: str | None = None) -> dict:
     """Подграф знаний: {nodes, edges, total_edges, truncated}.
 
-    Бросает SearchError при сбое.
+    query — подстрока имени сущности. Поиск делает сервис по всей базе, а не
+    фронт по уже загруженной выборке: иначе до связей, не попавших в обзор,
+    было бы не добраться. Бросает SearchError при сбое.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
     try:
         response = httpx.get(
             f"{config.retrieval_url}/graph",
+            params={"q": query} if query else None,
             headers={"X-API-Key": config.retrieval_api_key},
-            # Neo4j-обход + обогащение из Postgres, дольше поллинга. Запас
-            # заметный: лимит рёбер поднят до тысяч, и на большом графе обход
-            # с подтягиванием документов-источников идёт ощутимо дольше.
-            timeout=120,
+            timeout=60,  # Neo4j-обход + обогащение из Postgres, дольше поллинга
         )
         response.raise_for_status()
         return response.json()
