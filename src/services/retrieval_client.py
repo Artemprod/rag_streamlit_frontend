@@ -81,21 +81,39 @@ def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
         raise SearchError(f"Сервис поиска недоступен: {error}") from error
 
 
-def knowledge_graph() -> dict:
+def knowledge_graph(query: str | None = None, node_id: str | None = None) -> dict:
     """Подграф знаний: {nodes, edges, total_edges, truncated}.
 
-    Бросает SearchError при сбое.
+    query — подстрока имени сущности, node_id — id сущности, чью окрестность
+    надо раскрыть (приоритетнее query). И то и другое отрабатывает сервис по
+    всей базе, а не фронт по уже загруженной выборке: иначе до связей, не
+    попавших в обзор, было бы не добраться. Бросает SearchError при сбое.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
+    params = {k: v for k, v in (("q", query), ("node", node_id)) if v}
+    return _get_graph("/graph", params or None)
+
+
+def graph_node_documents(node_id: str) -> list[dict]:
+    """Документы-источники одной сущности: [{file_name, s3_key}].
+
+    Отдельным запросом по клику, а не вместе с графом: тащить источники сразу
+    для всех показанных сущностей — лишняя работа сервиса и лишний вес ответа
+    ради данных, которые смотрят у одной.
+    """
+    if not is_configured():
+        raise SearchNotReady("Сервис поиска не подключён")
+    return _get_graph("/graph/documents", {"node": node_id}).get("docs", [])
+
+
+def _get_graph(path: str, params: dict | None) -> dict:
     try:
         response = httpx.get(
-            f"{config.retrieval_url}/graph",
+            f"{config.retrieval_url}{path}",
+            params=params,
             headers={"X-API-Key": config.retrieval_api_key},
-            # Neo4j-обход + обогащение из Postgres, дольше поллинга. Запас
-            # заметный: лимит рёбер поднят до тысяч, и на большом графе обход
-            # с подтягиванием документов-источников идёт ощутимо дольше.
-            timeout=120,
+            timeout=60,  # обход Neo4j дольше поллинга статусов
         )
         response.raise_for_status()
         return response.json()
