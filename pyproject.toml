@@ -5,7 +5,10 @@ requires-python = ">=3.11"
 
 dependencies = [
     # ── Ядро UI ──────────────────────────────────────────────
-    "streamlit>=1.58.0",
+    # Экстра pdf — компонент streamlit-pdf под st.pdf. Без него атрибут st.pdf
+    # всё равно есть, но падает при вызове (StreamlitAPIException), поэтому
+    # проверить его наличие через hasattr нельзя — только поставить.
+    "streamlit[pdf]>=1.58.0",
     "streamlit-authenticator>=0.4.2",   # логин + cookie-сессия (готовый компонент)
     "streamlit-pdf-viewer>=0.0.29",     # просмотр PDF с аннотациями
     "streamlit-aggrid>=1.2.1.post2",    # таблицы CSV/Excel

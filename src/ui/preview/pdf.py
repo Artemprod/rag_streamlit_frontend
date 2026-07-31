@@ -52,7 +52,12 @@ def show_pdf(data: bytes, s3_key: str, documents: list) -> None:
 
     # Без подсветки тяжёлый компонент не нужен: нативный st.pdf открывается
     # заметно быстрее (стриминг вместо рендера всех страниц в DOM).
-    if not annotations and hasattr(st, "pdf"):
+    #
+    # Проверка hasattr(st, "pdf") тут когда-то стояла и не работала: атрибут
+    # есть всегда, а нужный компонент ставится экстрой streamlit[pdf] — без
+    # неё вызов падал StreamlitAPIException прямо в модалке. Экстра объявлена
+    # в зависимостях, поэтому проверять нечего.
+    if not annotations:
         st.pdf(data, height=1100)
         return
 
