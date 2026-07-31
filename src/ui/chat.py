@@ -148,6 +148,8 @@ _DOC_FORMS = ("документов", "документ", *["документа"
 
 def _documents_label(names: set[str]) -> str:
     """Один источник — его имя, несколько — счётчик со склонением."""
+    if not names:  # у источников не оказалось имён — считать нечего
+        return "документы из ответа"
     if len(names) == 1:
         return next(iter(names))
     count = len(names)
@@ -166,16 +168,14 @@ def _render_graph_link(documents: list[dict], ns: str) -> None:
     chunk_ids = [doc["id"] for doc in documents if doc.get("id")]
     if not chunk_ids:
         return
-    names = {
-        doc_metadata(doc).get("file_name") for doc in documents if doc_metadata(doc)
-    }
+    names = {name for doc in documents if (name := doc_metadata(doc).get("file_name"))}
     if st.button(
         "🕸️ Показать связи на графе",
         key=f"tograph_{ns}",
         help="Откроет граф знаний на сущностях из этих документов: видно, что "
         "с чем связано, и можно раскрывать связи дальше",
     ):
-        graph.focus_documents(chunk_ids, _documents_label(names - {None}))
+        graph.focus_documents(chunk_ids, _documents_label(names))
         st.switch_page(st.session_state["graph_page"])
 
 

@@ -110,7 +110,17 @@ def knowledge_graph(
     }
     if offset:
         params["offset"] = offset
-    return _get_graph("/graph", params or None)
+    try:
+        response = httpx.get(
+            f"{config.retrieval_url}/graph",
+            params=params or None,
+            headers={"X-API-Key": config.retrieval_api_key},
+            timeout=60,  # обход Neo4j дольше поллинга статусов
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as error:
+        raise SearchError(f"Не удалось получить граф знаний: {error}") from error
 
 
 def graph_node_documents(node_ids: list[str]) -> list[dict]:
@@ -119,23 +129,22 @@ def graph_node_documents(node_ids: list[str]) -> list[dict]:
     Отдельным запросом по действию пользователя, а не вместе с графом: тащить
     источники сразу для всех показанных сущностей — лишняя работа сервиса и
     лишний вес ответа ради данных, которые смотрят у одной-двух.
+
+    Запрос POST'ом, хотя это чтение: id приходят сотнями по 36 символов, и в
+    строке запроса такой список упёрся бы в лимит заголовков сервера.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
     if not node_ids:
         return []
-    return _get_graph("/graph/documents", {"node": node_ids}).get("docs", [])
-
-
-def _get_graph(path: str, params: dict | None) -> dict:
     try:
-        response = httpx.get(
-            f"{config.retrieval_url}{path}",
-            params=params,
+        response = httpx.post(
+            f"{config.retrieval_url}/graph/documents",
+            json={"nodes": node_ids},
             headers={"X-API-Key": config.retrieval_api_key},
-            timeout=60,  # обход Neo4j дольше поллинга статусов
+            timeout=60,
         )
         response.raise_for_status()
-        return response.json()
+        return response.json().get("docs", [])
     except httpx.HTTPError as error:
-        raise SearchError(f"Не удалось получить граф знаний: {error}") from error
+        raise SearchError(f"Не удалось получить документы: {error}") from error

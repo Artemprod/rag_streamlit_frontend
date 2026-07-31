@@ -74,7 +74,12 @@ _PANEL_HINT = (
 )
 
 
-@st.cache_data(ttl=120, show_spinner="Собираю граф знаний…")
+# Потолок записей у кэшей: без него каждая порция, раскрытие и поиск оседают
+# в памяти процесса до истечения ttl, а одна выдача — это сотни узлов и рёбер.
+_CACHE_ENTRIES = 32
+
+
+@st.cache_data(ttl=120, max_entries=_CACHE_ENTRIES, show_spinner="Собираю граф знаний…")
 def _load(query: str, node_id: str | None, page: int, chunks: tuple[str, ...]) -> dict:
     """Обзор графа (оба пустые), результат поиска или окрестность узла.
 
@@ -92,7 +97,7 @@ def _load(query: str, node_id: str | None, page: int, chunks: tuple[str, ...]) -
     )
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, max_entries=_CACHE_ENTRIES, show_spinner=False)
 def _load_docs(node_ids: tuple[str, ...]) -> list[dict]:
     """Документы сущностей — по действию пользователя, а не вместе с графом.
 
@@ -127,6 +132,9 @@ def focus_documents(chunk_ids: list[str], label: str) -> None:
     st.session_state["kg_chunks_label"] = label
     st.session_state["kg_trail"] = []
     st.session_state["kg_page"] = 0
+    # Иначе в поле поиска остался бы прошлый запрос: выборку он уже не задаёт
+    # (связи документов приоритетнее), а на экране выглядит как активный фильтр.
+    st.session_state["kg_search"] = ""
 
 
 def _chunks() -> tuple[str, ...]:
@@ -224,8 +232,7 @@ def _render_trail(query: str) -> None:
 def _render_node_card(node: dict, degree: int) -> None:
     """Панель выбранной сущности: связи, источники, шаг вглубь."""
     st.markdown(f"### {node['name']}")
-    kind = "категория" if node.get("type") == "EntityType" else "сущность"
-    st.caption(f"{kind} · связей на графе: {degree}")
+    st.caption(f"{_kind(node)} · связей на графе: {degree}")
 
     # Раскрытие — единственный способ увидеть связи, не попавшие в выборку.
     # На уже раскрытой сущности кнопку не показываем: она ничего не изменит.
@@ -288,6 +295,7 @@ def _controls() -> tuple[str, bool, object]:
     )
     query = search_col.text_input(
         "Поиск по сущностям",
+        key="kg_search",  # чтобы переход из чата мог очистить поле
         placeholder="например: правление",
         help="Ищет по всему графу, а не по видимой части: связи сущности "
         "придут, даже если в обзор они не попали.",
@@ -539,6 +547,12 @@ def render() -> None:
 
     nodes, edges = data["nodes"], data["edges"]
     if not nodes:
+        # Пустая порция дальше первой — это не «ничего не нашлось», а выход за
+        # край: граф успел измениться, пока пользователь листал. Без возврата
+        # к началу он застрял бы на пустом экране: пагинатор здесь не рисуется.
+        if _page():
+            st.session_state["kg_page"] = 0
+            st.rerun()
         _render_trail(query)
         _render_empty(focus, query)
         return
