@@ -15,8 +15,8 @@ from loguru import logger
 
 from services import chats, retrieval_client
 from services.retrieval_client import SearchError, SearchNotReady
-from ui import theme
-from ui.preview import preview_file
+from ui import graph, theme
+from ui.preview import doc_metadata, preview_file
 from ui.sources import render_sources
 
 _EXAMPLES = [
@@ -64,10 +64,12 @@ def _current_mode_label() -> str:
 # Фразы ожидания «как в мессенджере с характером». На один запрос берём
 # несколько случайных, CSS листает их по кругу без JS: при таком списке
 # повтор в пределах запроса невозможен, а между запросами — редок.
-_PHRASES_PER_REQUEST = 6
-# Сколько секунд висит одна фраза. Произведение на _PHRASES_PER_REQUEST
-# обязано совпадать с длительностью animation `phrase` в ui/theme.py.
-_PHRASE_SECONDS = 2.2
+# Число фраз менять нельзя без правки @keyframes phrase в ui/theme.py: окно
+# показа там задано в процентах цикла и рассчитано ровно на это количество.
+_PHRASES_PER_REQUEST = 20
+# Сколько секунд отведено одной фразе (из них ~70% она видна целиком).
+# Фразы длинные — на 2 секундах читатель не успевал и терял мысль.
+_PHRASE_SECONDS = 4.5
 
 _SEARCH_PHRASES = [
     "Кручу диск бронированного сейфа. 36 вправо, 12 влево...",
@@ -141,15 +143,58 @@ def _open_preview(s3_key: str, documents: list) -> None:
     _preview_dialog(s3_key, documents)
 
 
+_DOC_FORMS = ("документов", "документ", *["документа"] * 3, *["документов"] * 5)
+
+
+def _documents_label(names: set[str]) -> str:
+    """Один источник — его имя, несколько — счётчик со склонением."""
+    if len(names) == 1:
+        return next(iter(names))
+    count = len(names)
+    # Второй десяток по-русски всегда «документов»: одиннадцать, двенадцать…
+    form = "документов" if count % 100 // 10 == 1 else _DOC_FORMS[count % 10]
+    return f"{count} {form}"
+
+
+def _render_graph_link(documents: list[dict], ns: str) -> None:
+    """Переход «от ответа к графу»: связи сущностей из источников ответа.
+
+    Передаём id фрагментов, на которые ответ и сослался: сущности из них
+    извлечены ещё при обработке документов, поэтому переход стоит одного
+    запроса к графу — ни повторного поиска, ни обращения к модели.
+    """
+    chunk_ids = [doc["id"] for doc in documents if doc.get("id")]
+    if not chunk_ids:
+        return
+    names = {
+        doc_metadata(doc).get("file_name") for doc in documents if doc_metadata(doc)
+    }
+    if st.button(
+        "🕸️ Показать связи на графе",
+        key=f"tograph_{ns}",
+        help="Откроет граф знаний на сущностях из этих документов: видно, что "
+        "с чем связано, и можно раскрывать связи дальше",
+    ):
+        graph.focus_documents(chunk_ids, _documents_label(names - {None}))
+        st.switch_page(st.session_state["graph_page"])
+
+
 def _phrases_html() -> str:
-    """Разметка сменяющихся фраз: случайные фразы со сдвигом по времени."""
+    """Разметка сменяющихся фраз: случайные фразы со сдвигом по времени.
+
+    Темп и число фраз отдаём в CSS переменными: считать проценты кадров в
+    двух местах — верный способ получить разъезжающуюся анимацию.
+    """
     chosen = random.sample(
         _SEARCH_PHRASES, min(_PHRASES_PER_REQUEST, len(_SEARCH_PHRASES))
     )
-    return "".join(
-        f'<span style="animation-delay:{index * _PHRASE_SECONDS:.1f}s,0s">'
-        f"{escape(text)}</span>"
+    spans = "".join(
+        f'<span style="--i: {index};">{escape(text)}</span>'
         for index, text in enumerate(chosen)
+    )
+    return (
+        f'<div class="phrases" style="--step: {_PHRASE_SECONDS}s; '
+        f'--n: {len(chosen)};">{spans}</div>'
     )
 
 
@@ -169,11 +214,7 @@ def _handle_prompt(prompt: str, label: str | None = None) -> None:
         "question": prompt,
         # Фразы выбираются один раз на запрос: индикатор рисуется вне
         # фрагмента-опросчика, и CSS-цикл не сбрасывается каждый тик.
-        "phrases_html": "".join(
-            f'<span style="--i: {i};">{escape(text)}</span>'
-            for i, text in enumerate(random.sample(_SEARCH_PHRASES, 20))
- 
-        ),
+        "phrases_html": _phrases_html(),
     }
 
 
@@ -301,6 +342,7 @@ def _render_history() -> None:
                     ns=f"{chat_ns}_{i}",
                     on_select=_open_preview,
                 )
+                _render_graph_link(message.get("sources", []), ns=f"{chat_ns}_{i}")
                 _feedback(message, ns=f"{chat_ns}_{i}")
                 _render_rerun(message, i, ns=f"{chat_ns}_{i}")
 
@@ -323,7 +365,7 @@ def render() -> None:
         with st.chat_message("assistant"):
             st.html(
                 '<div class="typing"><span></span><span></span><span></span></div>'
-                f'<div class="phrases">{st.session_state.pending["phrases_html"]}</div>'
+                + st.session_state.pending["phrases_html"]
             )
         _poll_pending()
 

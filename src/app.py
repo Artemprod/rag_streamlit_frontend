@@ -41,11 +41,16 @@ sidebar.render_brand()
 # url_path обязателен и уникален: все функции называются render(),
 # иначе st.navigation вывел бы одинаковый путь и упал.
 chat_page = st.Page(chat.render, title="Чат", icon="💬", url_path="chat", default=True)
+graph_page = st.Page(graph.render, title="Граф знаний", icon="🕸️", url_path="graph")
+# Страница графа нужна чату: st.switch_page принимает объект страницы, а
+# создаются они только здесь. Класть в состояние дешевле, чем тащить объект
+# параметром через несколько слоёв отрисовки.
+st.session_state["graph_page"] = graph_page
 pages = st.navigation(
     [
         chat_page,
         st.Page(upload.render, title="Загрузка", icon="📤", url_path="upload"),
-        st.Page(graph.render, title="Граф знаний", icon="🕸️", url_path="graph"),
+        graph_page,
     ]
 )
 
