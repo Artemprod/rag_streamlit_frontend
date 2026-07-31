@@ -1911,7 +1911,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "s3fs" },
     { name = "st-link-analysis" },
-    { name = "streamlit" },
+    { name = "streamlit", extra = ["pdf"] },
     { name = "streamlit-aggrid" },
     { name = "streamlit-authenticator" },
     { name = "streamlit-pdf-viewer" },
@@ -1935,7 +1935,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.14.2" },
     { name = "s3fs", specifier = ">=2026.6.0" },
     { name = "st-link-analysis", specifier = ">=0.4.0" },
-    { name = "streamlit", specifier = ">=1.58.0" },
+    { name = "streamlit", extras = ["pdf"], specifier = ">=1.58.0" },
     { name = "streamlit-aggrid", specifier = ">=1.2.1.post2" },
     { name = "streamlit-authenticator", specifier = ">=0.4.2" },
     { name = "streamlit-pdf-viewer", specifier = ">=0.0.29" },
@@ -2215,6 +2215,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/4b/c2902746fb3fcc737ba925865a73475ad51521f26f84652aa9b337e12227/streamlit-1.59.2-py3-none-any.whl", hash = "sha256:5014cb4f0064bd16c58fe334cb0d3c4b7e2be3d1ce4c02202c07114a33576dab", size = 10338011, upload-time = "2026-07-13T09:00:48.464Z" },
 ]
 
+[package.optional-dependencies]
+pdf = [
+    { name = "streamlit-pdf" },
+]
+
 [[package]]
 name = "streamlit-aggrid"
 version = "1.2.1.post2"
@@ -2244,6 +2249,15 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/47/837b158e1a5b0d187d20c6be22c46d84d12a8d3e8d7113b67ebb33e221c9/streamlit_authenticator-0.4.2-py3-none-any.whl", hash = "sha256:442acccef6af65e2b0feb15d5e9f68707f204c1d31c60673690d87179c7ca5b2", size = 43197, upload-time = "2025-03-01T20:36:07.566Z" },
+]
+
+[[package]]
+name = "streamlit-pdf"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/5d/04487c85e3b5071b417451f1a910302d063ccd9f392457846bea271b340d/streamlit_pdf-2.0.1.tar.gz", hash = "sha256:c6306381d0eeb291d7a4f6eb16cfbf937560a29be78049c64251fa2c3276e1a2", size = 1949207, upload-time = "2025-11-18T00:38:44.079Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/57/ba77126eed2cb516feaf19b9f9d39af5be110b0a692415e772c7bbab7ed3/streamlit_pdf-2.0.1-py3-none-any.whl", hash = "sha256:8330d7f954e46edc7574b7e498378462555a8e25e829946abb78dbf5684b0a1e", size = 2083529, upload-time = "2025-11-18T00:38:42.373Z" },
 ]
 
 [[package]]
