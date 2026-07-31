@@ -170,8 +170,10 @@ def _render_graph_link(documents: list[dict], ns: str) -> None:
         return
     names = {name for doc in documents if (name := doc_metadata(doc).get("file_name"))}
     if st.button(
-        "🕸️ Показать связи на графе",
+        "🕸️ Посмотреть связи этих документов на графе",
         key=f"tograph_{ns}",
+        type="primary",
+        width="stretch",
         help="Откроет граф знаний на сущностях из этих документов: видно, что "
         "с чем связано, и можно раскрывать связи дальше",
     ):
