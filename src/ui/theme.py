@@ -75,10 +75,11 @@ _CSS = """
     40%           { transform: translateY(-0.28rem); opacity: 0.9;  }
   }
 
-  /* Сменные фразы под точками: каждая висит 2.2с, цикл 13.2с = 6 фраз.
-     Сдвиг задаёт Python инлайновым animation-delay (ui/chat.py), поэтому
-     число фраз меняется одной константой. Плюс «переливание» — градиент
-     бежит по тексту, видно, что процесс идёт. */
+  /* Сменные фразы под точками. Темп задаёт Python (ui/chat.py) переменными
+     --step (секунд на фразу) и --n (сколько их): цикл и сдвиг считаются из
+     них, так что тайминг живёт в одном месте. Окно показа в @keyframes —
+     в процентах цикла и рассчитано на --n: 20, менять их надо вместе.
+     Плюс «переливание» — градиент бежит по тексту, видно, что идёт работа. */
   .phrases { position: relative; height: 1.5em; margin-top: .35rem; }
   .phrases span {
     position: absolute; left: 0; white-space: nowrap;
@@ -89,21 +90,16 @@ _CSS = """
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    
-    /* Цикл 40s (из расчета 20 фраз * 2 сек). Если сделаешь 30 фраз — поменяй тут на 60s */
-    animation: phrase 40s linear infinite, shimmer 1.6s linear infinite;
-    
-    /* МАГИЯ ЗДЕСЬ: CSS сам умножает номер фразы из Питона на 2 секунды */
-    animation-delay: calc(var(--i) * 2s), 0s;
+    animation: phrase calc(var(--step) * var(--n)) linear infinite,
+               shimmer 2.4s linear infinite;
+    animation-delay: calc(var(--i) * var(--step)), 0s;
   }
 
-  /* ВСЕ .phrases span:nth-child(...) УДАЛЕНЫ */
-
   @keyframes phrase {
-    0% { opacity: 0; } 
-    1% { opacity: .85; } 
+    0% { opacity: 0; }
+    1% { opacity: .85; }
     4% { opacity: .85; }
-    5% { opacity: 0; } 
+    5% { opacity: 0; }
     100% { opacity: 0; }
   }
   @keyframes shimmer {

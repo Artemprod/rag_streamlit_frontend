@@ -81,30 +81,50 @@ def ask(question: str, mode: str = "default") -> tuple[str, list[dict]]:
         raise SearchError(f"Сервис поиска недоступен: {error}") from error
 
 
-def knowledge_graph(query: str | None = None, node_id: str | None = None) -> dict:
-    """Подграф знаний: {nodes, edges, total_edges, truncated}.
+def knowledge_graph(
+    query: str | None = None,
+    node_id: str | None = None,
+    offset: int = 0,
+    limit: int | None = None,
+    chunk_ids: list[str] | None = None,
+) -> dict:
+    """Подграф знаний: {nodes, edges, total_edges, truncated, limit, offset}.
 
     query — подстрока имени сущности, node_id — id сущности, чью окрестность
     надо раскрыть (приоритетнее query). И то и другое отрабатывает сервис по
     всей базе, а не фронт по уже загруженной выборке: иначе до связей, не
-    попавших в обзор, было бы не добраться. Бросает SearchError при сбое.
+    попавших в обзор, было бы не добраться.
+
+    chunk_ids — фрагменты документов: показать связи извлечённых из них
+    сущностей. Так из ответа в чате переходят к графу.
+
+    offset/limit листают выдачу порциями: размер порции задаёт фронт, потому
+    что упирается в него браузер, а не база. Бросает SearchError при сбое.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
-    params = {k: v for k, v in (("q", query), ("node", node_id)) if v}
+    params: dict = {
+        k: v
+        for k, v in (("q", query), ("node", node_id), ("limit", limit), ("chunk", chunk_ids))
+        if v
+    }
+    if offset:
+        params["offset"] = offset
     return _get_graph("/graph", params or None)
 
 
-def graph_node_documents(node_id: str) -> list[dict]:
-    """Документы-источники одной сущности: [{file_name, s3_key}].
+def graph_node_documents(node_ids: list[str]) -> list[dict]:
+    """Документы-источники сущностей: [{file_name, s3_key}].
 
-    Отдельным запросом по клику, а не вместе с графом: тащить источники сразу
-    для всех показанных сущностей — лишняя работа сервиса и лишний вес ответа
-    ради данных, которые смотрят у одной.
+    Отдельным запросом по действию пользователя, а не вместе с графом: тащить
+    источники сразу для всех показанных сущностей — лишняя работа сервиса и
+    лишний вес ответа ради данных, которые смотрят у одной-двух.
     """
     if not is_configured():
         raise SearchNotReady("Сервис поиска не подключён")
-    return _get_graph("/graph/documents", {"node": node_id}).get("docs", [])
+    if not node_ids:
+        return []
+    return _get_graph("/graph/documents", {"node": node_ids}).get("docs", [])
 
 
 def _get_graph(path: str, params: dict | None) -> dict:
