@@ -2,7 +2,11 @@
 
 Рисуем через st-link-analysis (Cytoscape.js): зум/перетаскивание/фулскрин из
 коробки, весь JS в бандле компонента — без CDN. Клик по сущности возвращается
-в Python, и под графом показываются документы, из которых она извлечена.
+в Python, и в панели справа показываются её документы и кнопка раскрытия.
+
+Граф исследуют шагами: обзор → поиск → клик → раскрытие связей → снова клик.
+Пройденный путь лежит в session_state (kg_trail), поэтому назад можно вернуться
+на любой шаг, а не только в самое начало.
 """
 
 import streamlit as st
@@ -38,20 +42,29 @@ _TUTORIAL = """
 
 - **Кружки** — сущности из ваших документов (отделы, комитеты, процессы),
   **янтарные** — их категории.
-- **Клик по кружку** — внизу появится карточка: в каких документах сущность
+- **Клик по кружку** — справа появится карточка: в каких документах сущность
   упоминается, файл открывается по клику.
 - **«Раскрыть связи»** в карточке — уходит в базу за всеми связями этой
-  сущности и показывает только её окрестность. Так граф обходят шаг за шагом:
-  сосед → его сосед → дальше. Вернуться назад — кнопкой над графом.
+  сущности и оставляет на экране только её окрестность. Так граф обходят шаг
+  за шагом: сосед → его сосед → дальше. Путь виден над графом, вернуться
+  можно на любой шаг.
 - **Колесо мыши** — масштаб, **перетаскивание** — двигать сцену и узлы.
-- **Поиск** слева идёт в базу и приносит найденные сущности вместе с
-  соседями. Сразу на экране лежит обзор графа, а не весь он целиком —
-  поэтому нужную сущность ищите поиском: её связи придут, даже если в
-  обзор они не попали.
+- **Поиск** идёт в базу и приносит найденные сущности вместе с соседями.
+  Сразу на экране лежит обзор графа, а не весь он целиком — поэтому нужную
+  сущность ищите поиском: её связи придут, даже если в обзор они не попали.
 - **Типы связей** — фильтр по уже показанному графу: разгружает картинку,
   в базу не ходит.
-- Кнопки в правом верхнем углу: перестроить раскладку, скачать, во весь экран.
+- Кнопки в правом верхнем углу графа: перестроить раскладку, скачать,
+  во весь экран.
 """
+
+# Сколько шагов пути показывать целиком, прежде чем свернуть середину в «…».
+_TRAIL_VISIBLE = 4
+
+_PANEL_HINT = (
+    "Кликните по кружку на графе — здесь появятся документы, из которых "
+    "сущность извлечена, и кнопка раскрытия её связей."
+)
 
 
 @st.cache_data(ttl=120, show_spinner="Собираю граф знаний…")
@@ -64,6 +77,16 @@ def _load(query: str, node_id: str | None) -> dict:
     раскрытий был мгновенным и не бил по Neo4j.
     """
     return retrieval_client.knowledge_graph(query or None, node_id)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_docs(node_id: str) -> list[dict]:
+    """Документы одной сущности — по клику, а не вместе с графом.
+
+    Спиннер выключен намеренно: запрос точечный и быстрый, а мигающая плашка
+    на каждый клик по узлу раздражает сильнее, чем помогает.
+    """
+    return retrieval_client.graph_node_documents(node_id)
 
 
 @st.dialog("Просмотр документа", width="large")
@@ -79,33 +102,86 @@ def _clicked_node_id(value) -> str | None:
     return None
 
 
+def _trail() -> list[dict]:
+    """Пройденный путь раскрытий: [{id, name}, ...]. Последний — текущий."""
+    return st.session_state.setdefault("kg_trail", [])
+
+
 def _focus(node: dict) -> None:
-    """Переводит граф в режим окрестности узла (обработчик кнопки «Раскрыть»).
+    """Шаг вглубь: раскрыть связи узла (обработчик кнопки в карточке).
 
     Через on_click, а не по возврату из st.button: иначе Streamlit сначала
     дорисовал бы страницу со старой выборкой и только потом перезапустил её.
     """
-    st.session_state["kg_focus"] = {"id": node["id"], "name": node["name"]}
+    _trail().append({"id": node["id"], "name": node["name"]})
+
+
+def _go_back(depth: int) -> None:
+    """Вернуться на шаг depth пути (0 — к обзору или результатам поиска)."""
+    del _trail()[depth:]
+
+
+def _render_trail(query: str) -> None:
+    """Хлебные крошки пути раскрытий — кнопками, чтобы вернуться на любой шаг.
+
+    Одной кнопки «назад» мало: после двух-трёх раскрытий пользователь перестаёт
+    понимать, где он и как сюда попал, а возврат к началу теряет весь путь.
+    """
+    trail = _trail()
+    if not trail:
+        return  # на обзоре и в поиске крошки не нужны: путь ещё не начат
+
+    root = f"Поиск «{query}»" if query else "Обзор графа"
+    steps = [(0, root), *((i + 1, s["name"]) for i, s in enumerate(trail))]
+    # Глубокий путь ужал бы кнопки в нечитаемые колонки. Начало пути важнее
+    # середины: вернуться к обзору нужно чаще, чем на четыре шага назад.
+    if len(steps) > _TRAIL_VISIBLE:
+        steps = [steps[0], (None, "…"), *steps[-2:]]
+
+    cols = st.columns(len(steps) + 1, vertical_alignment="center")
+    for col, (depth, label) in zip(cols, steps, strict=False):
+        with col:
+            if depth is None:
+                st.caption("…")
+            elif depth == steps[-1][0]:
+                st.markdown(f"**{label}**")
+            else:
+                st.button(
+                    f"‹ {label}",
+                    key=f"kgtrail_{depth}",
+                    on_click=_go_back,
+                    args=(depth,),
+                    type="tertiary",
+                )
 
 
 def _render_node_card(node: dict, degree: int) -> None:
-    """Карточка выбранной сущности: связи, откуда извлечена, открытие файла."""
-    st.subheader(node["name"])
+    """Панель выбранной сущности: связи, источники, шаг вглубь."""
+    st.markdown(f"### {node['name']}")
     kind = "категория" if node.get("type") == "EntityType" else "сущность"
     st.caption(f"{kind} · связей на графе: {degree}")
 
     # Раскрытие — единственный способ увидеть связи, не попавшие в выборку.
     # На уже раскрытой сущности кнопку не показываем: она ничего не изменит.
-    if (st.session_state.get("kg_focus") or {}).get("id") != node["id"]:
+    trail = _trail()
+    if not trail or trail[-1]["id"] != node["id"]:
         st.button(
-            "🔎 Раскрыть связи этой сущности",
+            "🔎 Раскрыть связи",
             key=f"gexp_{node['id']}",
             on_click=_focus,
             args=(node,),
             type="primary",
+            width="stretch",
+            help="Показать все связи этой сущности из базы, включая те, "
+            "что не попали в текущую выдачу",
         )
 
-    docs = node.get("docs") or []
+    try:
+        docs = _load_docs(node["id"])
+    except (SearchError, SearchNotReady):
+        st.caption("Не удалось загрузить документы-источники.")
+        return
+
     if not docs:
         st.caption("Для этой сущности не нашлось документов-источников.")
         return
@@ -122,11 +198,14 @@ def _render_node_card(node: dict, degree: int) -> None:
             _preview_dialog(doc["s3_key"])
 
 
-def _controls() -> tuple[str, bool]:
-    """Шапка страницы и запрос. Возвращает (поисковая строка, подписи связей).
+def _controls() -> tuple[str, bool, object]:
+    """Шапка и запрос. Возвращает (поиск, подписи связей, колонку под фильтр).
 
     Поиск спрашиваем ДО загрузки: он уходит в запрос к сервису, а не фильтрует
-    пришедшее.
+    пришедшее. Колонку под фильтр типов связей отдаём наружу пустой — её
+    заполнят после загрузки, когда станет известно, какие типы вообще есть.
+    Так все органы управления стоят одной строкой, а не растягивают страницу
+    и не отжимают граф вниз.
     """
     title_col, help_col, refresh_col = st.columns(
         [0.6, 0.2, 0.2], vertical_alignment="center"
@@ -136,11 +215,14 @@ def _controls() -> tuple[str, bool]:
         st.markdown(_TUTORIAL)
     if refresh_col.button("🔄 Обновить", width="stretch", help="Перечитать граф"):
         _load.clear()
+        _load_docs.clear()
 
-    search_col, labels_col = st.columns([0.75, 0.25], vertical_alignment="bottom")
+    search_col, filter_col, labels_col = st.columns(
+        [0.5, 0.3, 0.2], vertical_alignment="bottom"
+    )
     query = search_col.text_input(
         "Поиск по сущностям",
-        placeholder="например: правление — найду её в базе и покажу с соседями",
+        placeholder="например: правление",
         help="Ищет по всему графу, а не по видимой части: связи сущности "
         "придут, даже если в обзор они не попали.",
     ).strip()
@@ -148,26 +230,15 @@ def _controls() -> tuple[str, bool]:
         "Подписи связей",
         value=False,
         help="Названия отношений на линиях. На большом графе создают кашу — "
-        "включайте, когда сузили граф поиском.",
+        "включайте, когда сузили граф поиском или раскрытием.",
     )
 
-    # Новый поиск отменяет раскрытие: иначе пользователь ищет одно, а на
+    # Новый поиск отменяет раскрытия: иначе пользователь ищет одно, а на
     # экране остаётся окрестность узла, найденного до этого.
     if st.session_state.get("kg_query") != query:
         st.session_state["kg_query"] = query
-        st.session_state.pop("kg_focus", None)
-    return query, show_labels
-
-
-def _render_focus_bar(focus: dict) -> None:
-    """Где мы находимся при раскрытии узла и как вернуться к прежней выдаче."""
-    back_col, note_col = st.columns([0.25, 0.75], vertical_alignment="center")
-    if back_col.button("← Вернуться", width="stretch"):
-        st.session_state.pop("kg_focus", None)
-        st.rerun()
-    note_col.caption(
-        f"Показана окрестность сущности «{focus['name']}» — все её связи из базы."
-    )
+        st.session_state["kg_trail"] = []
+    return query, show_labels, filter_col
 
 
 def _render_empty(focus: dict | None, query: str) -> None:
@@ -176,7 +247,11 @@ def _render_empty(focus: dict | None, query: str) -> None:
             f"У сущности «{focus['name']}» нет связей с другими сущностями.", icon="🔍"
         )
     elif query:
-        st.info(f"Сущностей по запросу «{query}» не нашлось.", icon="🔍")
+        st.info(
+            f"Сущностей по запросу «{query}» не нашлось. Попробуйте часть слова: "
+            "поиск ищет по вхождению.",
+            icon="🔍",
+        )
     else:
         st.info(
             "Граф пока пуст: загрузите документы во вкладке «Загрузка» и "
@@ -185,7 +260,7 @@ def _render_empty(focus: dict | None, query: str) -> None:
         )
 
 
-def _relation_filter(nodes: list[dict], edges: list[dict]) -> tuple[list, list, list]:
+def _relation_filter(container, nodes: list[dict], edges: list[dict]) -> tuple:
     """Отбор по типам связей — по уже приехавшей выборке, без похода в базу.
 
     Это способ разгрузить картинку, а не сузить запрос. Узлы, оставшиеся без
@@ -195,7 +270,7 @@ def _relation_filter(nodes: list[dict], edges: list[dict]) -> tuple[list, list, 
     if len(relations) <= 1:  # выбирать не из чего — фильтр только мешал бы
         return nodes, edges, []
 
-    picked = st.multiselect(
+    picked = container.multiselect(
         "Типы связей",
         relations,
         placeholder=f"все типы ({len(relations)})",
@@ -210,13 +285,29 @@ def _relation_filter(nodes: list[dict], edges: list[dict]) -> tuple[list, list, 
     return [n for n in nodes if n["id"] in linked], kept, picked
 
 
+def _stats(data: dict, nodes: list, edges: list, query: str, focus: dict | None) -> str:
+    """Подпись под графом: сколько показано и всё ли это.
+
+    Без оговорки про обрезку выдача неотличима от полной: пользователь видит
+    связное полотно и считает, что перед ним всё, что нашлось.
+    """
+    shown = f"Показано сущностей: {len(nodes)}, связей: {len(edges)}"
+    if len(edges) != len(data["edges"]):
+        return shown + f" — отфильтровано по типам из {len(data['edges'])}"
+    if data.get("truncated"):
+        tail = "у сущности" if focus else "по запросу нашлось" if query else "в графе"
+        return shown + f" — {tail} {data['total_edges']}, показаны не все"
+    if focus:
+        return shown + " — это все её связи"
+    return shown if query else shown + " — это весь граф"
+
+
 def render() -> None:
     theme.wide()  # графу нужен весь экран, а не колонка для чтения
 
-    query, show_labels = _controls()
-    focus = st.session_state.get("kg_focus")
-    if focus:
-        _render_focus_bar(focus)
+    query, show_labels, filter_col = _controls()
+    trail = _trail()
+    focus = trail[-1] if trail else None
 
     try:
         data = _load(query, focus["id"] if focus else None)
@@ -229,50 +320,52 @@ def render() -> None:
 
     nodes, edges = data["nodes"], data["edges"]
     if not nodes:
+        _render_trail(query)
         _render_empty(focus, query)
         return
 
-    nodes, edges, picked = _relation_filter(nodes, edges)
+    nodes, edges, picked = _relation_filter(filter_col, nodes, edges)
+    _render_trail(query)
     if not nodes:
         st.info("По выбранным типам связей ничего не осталось.", icon="🔍")
         return
+    st.caption(_stats(data, nodes, edges, query, focus))
 
-    shown = f"Показано сущностей: {len(nodes)}, связей: {len(edges)}"
-    # Без этой оговорки обрезанная выдача неотличима от полной: пользователь
-    # видит связное полотно и считает, что перед ним всё, что нашлось.
-    if picked:
-        shown += f" — отфильтровано по типам из {len(data['edges'])}"
-    elif data.get("truncated"):
-        tail = "у сущности" if focus else "по запросу нашлось" if query else "в графе"
-        shown += f" — {tail} {data['total_edges']}, показаны не все"
-    elif not query and not focus:
-        shown += " — это весь граф"
-    st.caption(shown)
+    graph_col, panel_col = st.columns([0.72, 0.28], gap="medium")
+    with graph_col:
+        elements = {
+            "nodes": [
+                # docs в data не кладём: встроенная инфопанель компонента
+                # показала бы их сырым JSON. Панель справа рисуем сами.
+                {"data": {"id": n["id"], "label": n["type"], "name": n["name"]}}
+                for n in nodes
+            ],
+            "edges": [{"data": e} for e in edges],
+        }
+        clicked = st_link_analysis(
+            elements,
+            layout=_LAYOUT,
+            node_styles=_NODE_STYLES,
+            edge_styles=[
+                EdgeStyle("*", caption="label" if show_labels else None, directed=True)
+            ],
+            height=640,
+            # Ключ зависит от выборки: её смена перемонтирует компонент и
+            # заново раскладывает граф, а не оставляет старую сцену.
+            key=f"kg_{hash((query, focus and focus['id'], show_labels, tuple(picked))) & 0xFFFF}",
+            events=[_CLICK],
+        )
 
-    elements = {
-        "nodes": [
-            # docs в data не кладём: встроенная инфопанель компонента показала
-            # бы их сырым JSON. Карточку с кнопками рисуем сами по клику.
-            {"data": {"id": n["id"], "label": n["type"], "name": n["name"]}}
-            for n in nodes
-        ],
-        "edges": [{"data": e} for e in edges],
-    }
-    clicked = st_link_analysis(
-        elements,
-        layout=_LAYOUT,
-        node_styles=_NODE_STYLES,
-        edge_styles=[EdgeStyle("*", caption="label" if show_labels else None, directed=True)],
-        height=640,
-        # Ключ зависит от фильтров: смена выборки перемонтирует компонент
-        # и заново раскладывает граф, а не оставляет старую сцену.
-        key=f"kg_{hash((query, focus and focus['id'], show_labels, tuple(picked))) & 0xFFFF}",
-        events=[_CLICK],
-    )
-
-    node_id = _clicked_node_id(clicked)
-    if node_id:
-        node = next((n for n in nodes if n["id"] == node_id), None)
-        if node:
-            degree = sum(node_id in (e["source"], e["target"]) for e in edges)
+    # Панель всегда на экране рядом с графом: карточка под графом требовала
+    # прокрутки, и клик по узлу выглядел так, будто ничего не произошло.
+    with panel_col, st.container(border=True, height=640):
+        # После раскрытия показываем ту самую сущность, которую раскрыли:
+        # она и есть центр выборки, и пустая панель сразу после клика
+        # выглядела бы как потеря контекста.
+        node_id = _clicked_node_id(clicked) or (focus and focus["id"])
+        node = next((n for n in nodes if n["id"] == node_id), None) if node_id else None
+        if node is None:
+            st.caption(_PANEL_HINT)
+        else:
+            degree = sum(node["id"] in (e["source"], e["target"]) for e in edges)
             _render_node_card(node, degree)
