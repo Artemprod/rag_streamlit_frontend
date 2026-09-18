@@ -1,20 +1,19 @@
 # Точка входа для пользователя. Сеть `rag` создаётся в
 # rag_storage_infrastructure, поднимать её нужно до этого compose.
-
 services:
   ui:
     build: .
     container_name: rag-ui
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8080:8080"
     env_file: .env
     volumes:
       # История диалогов чата (services/chats.py) — переживает пересборку.
       - ui_data:/data
     healthcheck:
       # Штатный health-эндпоинт Streamlit; curl/wget в python:slim нет.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/_stcore/health').read()"]
       interval: 15s
       timeout: 5s
       retries: 5
