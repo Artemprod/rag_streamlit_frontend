@@ -4,6 +4,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Streamlit не запускается из корня ФС — рабочий каталог обязателен
 WORKDIR /app
+
 ENV UV_PROJECT_ENVIRONMENT=/usr/local PYTHONUNBUFFERED=1
 
 # Зависимости отдельным слоем — кэшируются между сборками
@@ -13,8 +14,10 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY .streamlit ./.streamlit
 COPY src ./src
 
-EXPOSE 8501
+EXPOSE 8080
+
 ENTRYPOINT ["streamlit", "run", "src/app.py", \
             "--server.address=0.0.0.0", \
+            "--server.port=8080", \
             "--server.headless=true", \
             "--server.maxUploadSize=500"]
